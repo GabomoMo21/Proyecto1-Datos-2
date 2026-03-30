@@ -1,122 +1,105 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <chrono>
 #include <vector>
+#include <cstdlib>
+
 using namespace std;
-using namespace std::chrono;
-
-
-bool copy(const string& archivoin, const string& archivoout) {
-    ifstream input(archivoin, std::ios::binary);//abrir en lectura el archivo de origen
-    ofstream output(archivoout, std::ios::binary);//abrir en escritura el archivo de destino
-
-    if (!input.is_open() || !output.is_open()) {
-        cout << "Error al abrir el archivo." << endl;
-        return false;
-    }
-
-    output << input.rdbuf(); //Hace la copia del contenido
-
-    if (!input.good() || !output.good()) {
-        cout << "Error al copiar el archivo." << endl;
-        return false;
-    }
-
-    cout<<"archivo copiado exitosamente"<<endl;
-    return true;
-}
-
-
-
-
-
-int main() {
-    auto start = high_resolution_clock::now();
-    int indice = 3222;
-    int pagesize = 4096;
-    int intsperpage = pagesize / sizeof(int);
-    int pagenumber = indice / intsperpage;
-    int offset = indice % intsperpage;
-    int bytes = offset * pagesize;
-    int pagestartbyte = pagenumber * pagesize;
-    int pagina[intsperpage];
-    int offsetbytes = offset * sizeof(int);
-
-
-    ifstream lectura("output.bin", std::ios::binary);
-    //for (int i = 0; i < 134217728; i++) {
-    lectura.seekg(pagestartbyte, std::ios::beg);
-    for (int i = 0; i < intsperpage; i++) {
-        int value;
-        lectura.read((char*)&value, sizeof(int));
-        pagina[i] = value;
-    }
-    //int value;
-    //lectura.read((char*)&value, sizeof(int));
-    //cout << value << endl;
-    //}
-    auto end = high_resolution_clock::now();
-    auto duration = duration_cast<microseconds>(end - start);
-    cout << duration.count() << endl;
-    cout << indice << endl;
-    cout << pagesize << endl;
-    cout << intsperpage << endl;
-    cout << pagenumber << endl;
-    cout << bytes << endl;
-    cout << offset << endl;
-    cout << pagina << endl;
-    cout << pagina[offset] << endl;
-    return 0;
-}
-
-
 
 class PagedArray {
 public:
-    int indice = 3222;
-    int pagesize = 4096;
-    int intsperpage = pagesize / sizeof(int);
-    int Currentpagenumber = -1;
+    int intsPerPage;
+    int pageCount;
     ifstream lectura;
-    vector<int> pagina;
+    vector<vector<int>> paginas;
+    vector<int> pagenumbers;
+    int totalElementos;
+    int hits = 0;
+    int faults = 0;
+    int siguiente = 0;
 
+    PagedArray(const string& filename, int pageSize, int pageCount)
+        : intsPerPage(pageSize), pageCount(pageCount) {
 
-    PagedArray(const string& filename) {
-        lectura.open(filename, std::ios::binary);
+        lectura.open(filename, ios::binary);
         if (!lectura) {
             cerr << "Error al abrir el archivo " << filename << endl;
         }
 
-        pagina.resize(intsperpage);
+        lectura.seekg(0, ios::end);
+        auto tamanoArchivo = lectura.tellg();
+        totalElementos = tamanoArchivo / sizeof(int);
+        lectura.seekg(0, ios::beg);
+        paginas.resize(pageCount);
+        for (int i = 0; i < pageCount; i++) {
+            paginas[i].resize(intsPerPage);
+        }
+        pagenumbers.resize(pageCount, -1);
     }
 
+    void cargarPagina(int pageNumber, int slot) {
+        int pageStartByte = pageNumber * intsPerPage * sizeof(int);
 
+        lectura.seekg(pageStartByte, ios::beg);
 
-
-    void CargarPagina(int pagenumber){
-
-        int pagestartbyte = pagenumber * pagesize;
-
-        lectura.seekg(pagestartbyte, std::ios::beg);
-        for (int i = 0; i < intsperpage; i++) {
+        for (int i = 0; i < intsPerPage; i++) {
             int value;
             lectura.read((char*)&value, sizeof(int));
-            pagina[i] = value;
-
+            paginas[slot][i] = value;
         }
-        Currentpagenumber = pagenumber;
+        pagenumbers[slot] = pageNumber;
     }
 
     int get(int indice) {
-        int pagenumber = indice / intsperpage;
-        int offset = indice % intsperpage;
-
-        if (pagenumber != Currentpagenumber) {
-            CargarPagina(pagenumber);
-
+        if (indice < 0 || indice >= totalElementos) {
+            cerr << "Indice fuera de rango: " << indice << endl;
+            return -1;
         }
-        return pagina[offset];
+
+        int pageNumber = indice / intsPerPage;
+        int offset = indice % intsPerPage;
+        int prov;
+
+        for (int i = 0; i < pageCount; i++) {
+            if (pageNumber == pagenumbers[i]) {
+                hits++;
+                return paginas[i][offset];
+            }
+        }
+
+        faults++;
+        for (int j = 0; j < pageCount; j++) {
+            if (pagenumbers[j] == -1) {
+                cargarPagina(pageNumber, j);
+                return paginas[j][offset];
+            }
+        }
+        prov = siguiente;
+        cargarPagina(pageNumber, prov);
+        siguiente = (siguiente + 1) % pageCount;
+        return paginas[prov][offset];
     }
+};
+
+int main(int argc, char* argv[]) {
+    if (argc < 11) {
+        cerr << "Uso: sorter -input <archivo_entrada> -output <archivo_salida> -alg <algoritmo> -pageSize <page_size> -pageCount <page_count>" << endl;
+        return 1;
+    }
+
+    string input = argv[2];
+    string output = argv[4];
+    string algoritmo = argv[6];
+    int pageSize = atoi(argv[8]);
+    int pageCount = atoi(argv[10]);
+
+    PagedArray arreglo(input, pageSize, pageCount);
+
+    cout << "Total de elementos: " << arreglo.totalElementos << endl;
+    cout << arreglo.get(0) << endl;
+    cout << arreglo.get(1024) << endl;
+    cout << arreglo.get(2048) << endl;
+    cout << "Hits: " << arreglo.hits << endl;
+    cout << "Faults: " << arreglo.faults << endl;
+    return 0;
 }
-;
