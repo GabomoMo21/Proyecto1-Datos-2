@@ -1,63 +1,131 @@
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <vector>
 #include <cstdlib>
-
+#include <chrono>
+#include <cstdio>
+#include <filesystem>
 using namespace std;
+using namespace std::chrono;
 
 class PagedArray {
 public:
+    class Referencia {
+    private:
+        PagedArray& arreglo;
+        int indice;
+
+    public:
+        Referencia(PagedArray& arr, int idx) : arreglo(arr), indice(idx) {}
+
+        Referencia& operator=(int valor) {
+            arreglo.set(indice, valor);
+            return *this;
+        }
+
+        Referencia& operator=(const Referencia& otra) {
+            int valor = (int)otra;
+            arreglo.set(indice, valor);
+            return *this;
+        }
+
+        operator int() const {
+            return arreglo.get(indice);
+        }
+    };
+
+private:
     int intsPerPage;
     int pageCount;
     fstream archivo;
-    vector<vector<int>> paginas;
-    vector<int> pagenumbers;
+    int** paginas;
+    int* pageNumbers;
+    bool* dirtyFlags;
     int totalElementos;
-    int hits = 0;
-    int faults = 0;
-    int siguiente = 0;
+    long long hits;
+    long long faults;
+    int siguiente;
 
-    PagedArray(const string& filename, int pageSize, int pageCount)
-        : intsPerPage(pageSize), pageCount(pageCount) {
+public:
+    PagedArray(const string& filename, int pageSize, int cantidadPaginas)
+        : intsPerPage(pageSize),
+          pageCount(cantidadPaginas),
+          paginas(nullptr),
+          pageNumbers(nullptr),
+          dirtyFlags(nullptr),
+          totalElementos(0),
+          hits(0),
+          faults(0),
+          siguiente(0) {
 
         archivo.open(filename, ios::in | ios::out | ios::binary);
-        if (!archivo) {
+        if (!archivo.is_open()) {
             cerr << "Error al abrir el archivo " << filename << endl;
             return;
         }
 
         archivo.seekg(0, ios::end);
-        auto tamanoArchivo = archivo.tellg();
-        totalElementos = tamanoArchivo / sizeof(int);
+        streampos tamanoArchivo = archivo.tellg();
+        totalElementos = (int)(tamanoArchivo / (streampos)sizeof(int));
         archivo.seekg(0, ios::beg);
 
-        paginas.resize(pageCount);
+        paginas = new int*[pageCount];
         for (int i = 0; i < pageCount; i++) {
-            paginas[i].resize(intsPerPage);
-        }
-
-        pagenumbers.resize(pageCount, -1);
-    }
-
-    void cargarPagina(int pageNumber, int slot) {
-        int pageStartByte = pageNumber * intsPerPage * sizeof(int);
-
-        archivo.seekg(pageStartByte, ios::beg);
-
-        for (int i = 0; i < intsPerPage; i++) {
-            int value;
-            archivo.read((char*)&value, sizeof(int));
-
-            if (archivo) {
-                paginas[slot][i] = value;
-            } else {
-                paginas[slot][i] = 0;
+            paginas[i] = new int[intsPerPage];
+            for (int j = 0; j < intsPerPage; j++) {
+                paginas[i][j] = 0;
             }
         }
 
-        archivo.clear();
-        pagenumbers[slot] = pageNumber;
+        pageNumbers = new int[pageCount];
+        dirtyFlags = new bool[pageCount];
+
+        for (int i = 0; i < pageCount; i++) {
+            pageNumbers[i] = -1;
+            dirtyFlags[i] = false;
+        }
+    }
+
+    PagedArray(const PagedArray&) = delete;
+    PagedArray& operator=(const PagedArray&) = delete;
+
+    ~PagedArray() {
+        flushTodasLasPaginas();
+
+        if (paginas != nullptr) {
+            for (int i = 0; i < pageCount; i++) {
+                delete[] paginas[i];
+            }
+            delete[] paginas;
+        }
+
+        delete[] pageNumbers;
+        delete[] dirtyFlags;
+
+        if (archivo.is_open()) {
+            archivo.close();
+        }
+    }
+
+    Referencia operator[](int indice) {
+        return Referencia(*this, indice);
+    }
+
+    long long getHits() const {
+        return hits;
+    }
+
+    long long getFaults() const {
+        return faults;
+    }
+
+    int getTotalElementos() const {
+        return totalElementos;
+    }
+
+    int size() const {
+        return totalElementos;
     }
 
     int get(int indice) {
@@ -69,26 +137,8 @@ public:
         int pageNumber = indice / intsPerPage;
         int offset = indice % intsPerPage;
 
-        for (int i = 0; i < pageCount; i++) {
-            if (pageNumber == pagenumbers[i]) {
-                hits++;
-                return paginas[i][offset];
-            }
-        }
-
-        faults++;
-
-        for (int j = 0; j < pageCount; j++) {
-            if (pagenumbers[j] == -1) {
-                cargarPagina(pageNumber, j);
-                return paginas[j][offset];
-            }
-        }
-
-        int prov = siguiente;
-        cargarPagina(pageNumber, prov);
-        siguiente = (siguiente + 1) % pageCount;
-        return paginas[prov][offset];
+        int slot = asegurarPaginaCargada(pageNumber);
+        return paginas[slot][offset];
     }
 
     void set(int indice, int valor) {
@@ -100,163 +150,320 @@ public:
         int pageNumber = indice / intsPerPage;
         int offset = indice % intsPerPage;
 
-        for (int i = 0; i < pageCount; i++) {
-            if (pageNumber == pagenumbers[i]) {
-                hits++;
-                paginas[i][offset] = valor;
-
-                int posicionReal = indice * sizeof(int);
-                archivo.seekp(posicionReal, ios::beg);
-                archivo.write((char*)&valor, sizeof(int));
-                archivo.flush();
-                return;
-            }
-        }
-        faults++;
-        for (int j = 0; j < pageCount; j++) {
-            if (pagenumbers[j] == -1) {
-                cargarPagina(pageNumber, j);
-                paginas[j][offset] = valor;
-
-                int posicionReal = indice * sizeof(int);
-                archivo.seekp(posicionReal, ios::beg);
-                archivo.write((char*)&valor, sizeof(int));
-                archivo.flush();
-                return;
-            }
-        }
-
-        int prov = siguiente;
-        cargarPagina(pageNumber, prov);
-        paginas[prov][offset] = valor;
-
-        int posicionReal = indice * sizeof(int);
-        archivo.seekp(posicionReal, ios::beg);
-        archivo.write((char*)&valor, sizeof(int));
-        archivo.flush();
-
-        siguiente = (siguiente + 1) % pageCount;
+        int slot = asegurarPaginaCargada(pageNumber);
+        paginas[slot][offset] = valor;
+        dirtyFlags[slot] = true;
     }
 
-    int size() {
-        return totalElementos;
+private:
+    int buscarSlotPagina(int pageNumber) const {
+        for (int i = 0; i < pageCount; i++) {
+            if (pageNumbers[i] == pageNumber) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    int buscarSlotLibre() const {
+        for (int i = 0; i < pageCount; i++) {
+            if (pageNumbers[i] == -1) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    void escribirPaginaSiEsNecesario(int slot) {
+        if (slot < 0 || slot >= pageCount) {
+            return;
+        }
+
+        if (pageNumbers[slot] == -1 || !dirtyFlags[slot]) {
+            return;
+        }
+
+        int pageNumber = pageNumbers[slot];
+        int elementosAEscribir = elementosValidosEnPagina(pageNumber);
+        int pageStartByte = pageNumber * intsPerPage * (int)sizeof(int);
+
+        archivo.clear();
+        archivo.seekp(pageStartByte, ios::beg);
+
+        for (int i = 0; i < elementosAEscribir; i++) {
+            archivo.write((char*)&paginas[slot][i], sizeof(int));
+        }
+
+        archivo.flush();
+        dirtyFlags[slot] = false;
+    }
+
+    int elementosValidosEnPagina(int pageNumber) const {
+        int inicio = pageNumber * intsPerPage;
+
+        if (inicio >= totalElementos) {
+            return 0;
+        }
+
+        int restantes = totalElementos - inicio;
+
+        if (restantes >= intsPerPage) {
+            return intsPerPage;
+        }
+
+        return restantes;
+    }
+
+    void cargarPagina(int pageNumber, int slot) {
+        int pageStartByte = pageNumber * intsPerPage * (int)sizeof(int);
+        int elementosALeer = elementosValidosEnPagina(pageNumber);
+
+        archivo.clear();
+        archivo.seekg(pageStartByte, ios::beg);
+
+        for (int i = 0; i < elementosALeer; i++) {
+            int value;
+            archivo.read((char*)&value, sizeof(int));
+
+            if (archivo) {
+                paginas[slot][i] = value;
+            } else {
+                paginas[slot][i] = 0;
+            }
+        }
+
+        for (int i = elementosALeer; i < intsPerPage; i++) {
+            paginas[slot][i] = 0;
+        }
+
+        archivo.clear();
+        pageNumbers[slot] = pageNumber;
+        dirtyFlags[slot] = false;
+    }
+
+    int asegurarPaginaCargada(int pageNumber) {
+        int slotExistente = buscarSlotPagina(pageNumber);
+        if (slotExistente != -1) {
+            hits++;
+            return slotExistente;
+        }
+
+        faults++;
+
+        int slotLibre = buscarSlotLibre();
+        if (slotLibre != -1) {
+            cargarPagina(pageNumber, slotLibre);
+            return slotLibre;
+        }
+
+        int slotReemplazo = siguiente;
+        escribirPaginaSiEsNecesario(slotReemplazo);
+        cargarPagina(pageNumber, slotReemplazo);
+        siguiente = (siguiente + 1) % pageCount;
+
+        return slotReemplazo;
+    }
+
+    void flushTodasLasPaginas() {
+        if (paginas == nullptr || pageNumbers == nullptr || dirtyFlags == nullptr) {
+            return;
+        }
+
+        for (int i = 0; i < pageCount; i++) {
+            escribirPaginaSiEsNecesario(i);
+        }
     }
 };
 
-void bubblesort(PagedArray& array, int n) {
-    bool sorted;
+void intercambiar(PagedArray& arreglo, int a, int b) {
+    int temporal = arreglo[a];
+    arreglo[a] = arreglo[b];
+    arreglo[b] = temporal;
+}
 
+//selectionsort
+void selectionsort(PagedArray& arr, int n) {
     for (int i = 0; i < n - 1; i++) {
-        sorted = false;
+        int min_idx = i;
 
-        for (int j = 0; j < n - i - 1; j++) {
-            int a = array.get(j);
-            int b = array.get(j + 1);
-
-            if (a > b) {
-                array.set(j, b);
-                array.set(j + 1, a);
-                sorted = true;
+        for (int j = i + 1; j < n; j++) {
+            if (arr[j] < arr[min_idx]) {
+                min_idx = j;
             }
         }
 
-        if (!sorted) {
-            break;
+        if (min_idx != i) {
+            intercambiar(arr, i, min_idx);
         }
     }
 }
 
 
-void cambiar(PagedArray& arreglo, int a, int b) {
-    int temp = arreglo.get(a);
-    int valorB = arreglo.get(b);
-
-    arreglo.set(a, valorB);
-    arreglo.set(b, temp);
-}
+// quicksort
 
 int partition(PagedArray& arreglo, int low, int high) {
-    int pivot = arreglo.get(high);
-
-    // Index of elemment just before the last element
-    // It is used for swapping
-    int i = (low - 1);
+    int pivot = arreglo[high];
+    int i = low - 1;
 
     for (int j = low; j <= high - 1; j++) {
-        int actual = arreglo.get(j);
-        // If current element is smaller than or
-        // equal to pivot
+        int actual = arreglo[j];
         if (actual <= pivot) {
             i++;
-            cambiar(arreglo, i, j);
+            intercambiar(arreglo, i, j);
         }
     }
 
-    // Put pivot to its position
-    cambiar(arreglo,i+1, high);
-
-    // Return the point of partition
-    return (i + 1);
-
+    intercambiar(arreglo, i + 1, high);
+    return i + 1;
 }
 
 void quicksort(PagedArray& arreglo, int low, int high) {
     if (low < high) {
-
-        // pi is Partitioning Index, arr[p] is now at
-        // right place
         int pi = partition(arreglo, low, high);
-
-        // Separately sort elements before and after the
-        // Partition Index pi
         quicksort(arreglo, low, pi - 1);
         quicksort(arreglo, pi + 1, high);
     }
 }
 
+
+bool verificarOrden(const string& filename) {
+    ifstream archivo(filename, ios::binary);
+
+    if (!archivo.is_open()) {
+        cerr << "Error al abrir archivo para verificacion" << endl;
+        return false;
+    }
+
+    int anterior, actual;
+
+    if (!archivo.read((char*)&anterior, sizeof(int))) {
+        archivo.close();
+        return true;
+    }
+
+    while (archivo.read((char*)&actual, sizeof(int))) {
+        if (actual < anterior) {
+            cerr << "Desorden detectado: " << anterior << " > " << actual << endl;
+            archivo.close();
+            return false;
+        }
+        anterior = actual;
+    }
+
+    archivo.close();
+    return true;
+}
+
+bool copiarArchivoBinario(const string& origen, const string& destino) {
+    ifstream archivoEntrada(origen, ios::binary);
+    if (!archivoEntrada.is_open()) {
+        cerr << "Error al abrir el archivo de entrada" << endl;
+        return false;
+    }
+
+    ofstream archivoSalida(destino, ios::binary);
+    if (!archivoSalida.is_open()) {
+        cerr << "Error al abrir el archivo de salida" << endl;
+        return false;
+    }
+
+    archivoSalida << archivoEntrada.rdbuf();
+
+    archivoEntrada.close();
+    archivoSalida.close();
+    return true;
+}
+
+string construirNombreArchivoLegible(const string& output) {
+    size_t punto = output.find_last_of('.');
+
+    if (punto != string::npos) {
+        return output.substr(0, punto) + ".txt";
+    }
+
+    return output + ".txt";
+}
+
+void imprimirResumen(const string& nombreAlgoritmo, long long tiempoMs, PagedArray& arreglo){
+    cout << "Tiempo de ejecucion: " << tiempoMs << " ms" << endl;
+    cout << "Algoritmo utilizado: " << nombreAlgoritmo << endl;
+    cout << "Total de elementos: " << arreglo.getTotalElementos() << endl;
+
+    if (arreglo.getTotalElementos() > 0) {
+        cout << "Primer elemento: " << (int)arreglo[0] << endl;
+    }
+    if (arreglo.getTotalElementos() > 1) {
+        cout << "Segundo elemento: " << (int)arreglo[1] << endl;
+    }
+    if (arreglo.getTotalElementos() > 2) {
+        cout << "Tercer elemento: " << (int)arreglo[2] << endl;
+    }
+
+    cout << "Hits: " << arreglo.getHits() << endl;
+    cout << "Faults: " << arreglo.getFaults() << endl;
+}
+
 int main(int argc, char* argv[]) {
+    long long tiempoMs = 0;
+    int totalElementos = 0;
+    int hitsFinales = 0;
+    int faultsFinales = 0;
     if (argc < 11) {
         cerr << "Uso: sorter -input <archivo_entrada> -output <archivo_salida> -alg <algoritmo> -pageSize <page_size> -pageCount <page_count>" << endl;
         return 1;
     }
+
     string input = argv[2];
     string output = argv[4];
     string algoritmo = argv[6];
     int pageSize = atoi(argv[8]);
     int pageCount = atoi(argv[10]);
 
-    ifstream archivo_entrada(input, ios::binary);
-    if (!archivo_entrada.is_open()) {
-        cout << "Error al abrir el archivo_entrada" << endl;
+    string algoritmoUsado = "";
+    auto inicio = high_resolution_clock::now();
+
+    if (!copiarArchivoBinario(input, output)) {
         return 1;
     }
-    ofstream archivo_salida(output, ios::binary);
-    if (!archivo_salida.is_open()) {
-        cout << "Error al abrir el archivo_salida" << endl;
-        return 1;
-    }
-    archivo_salida<<archivo_entrada.rdbuf();
-    archivo_entrada.close();
-    archivo_salida.close();
 
     PagedArray arreglo(output, pageSize, pageCount);
-    int n = min(arreglo.size(), 10000);
-    if (algoritmo == "bubble") {
-        bubblesort(arreglo, n);
+    int n = arreglo.size();
+
+    if (algoritmo == "selection") {
+        algoritmoUsado = "selectionsort";
+        selectionsort(arreglo, n);
+    } else if (algoritmo == "quick") {
+        algoritmoUsado = "quicksort";
+        quicksort(arreglo, 0, n - 1);
+    }else {
+        cerr << "Algoritmo no reconocido" << endl;
+        return 1;
     }
 
-    if (algoritmo == "quick") {
-        quicksort(arreglo, 0 , n-1);
+    auto fin = high_resolution_clock::now();
+    tiempoMs = duration_cast<milliseconds>(fin - inicio).count();
+
+    totalElementos = arreglo.getTotalElementos();
+    hitsFinales = arreglo.getHits();
+    faultsFinales = arreglo.getFaults();
+
+    imprimirResumen(algoritmoUsado, tiempoMs, arreglo);
+
+
+
+    bool ordenado = verificarOrden(output);
+    if (ordenado) {
+        cout << "Ordenado" << endl;
+    } else {
+        cout << "Desordenado" << endl;
     }
 
+    string outputLegible = construirNombreArchivoLegible(output);
+    bool archivoLegibleGenerado = generarArchivoLegible(output, outputLegible);
+    if (!archivoLegibleGenerado) {
+        cerr << "No se pudo generar el archivo legible." << endl;
+        return 1;
+    }
 
-
-
-    cout << "Total de elementos: " << arreglo.totalElementos << endl;
-    cout << arreglo.get(0) << endl;
-    cout << arreglo.get(1) << endl;
-    cout << arreglo.get(2) << endl;
-    cout << "Hits: " << arreglo.hits << endl;
-    cout << "Faults: " << arreglo.faults << endl;
     return 0;
 }
