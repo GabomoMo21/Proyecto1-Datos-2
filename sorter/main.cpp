@@ -2,10 +2,9 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <cstdlib>
 #include <chrono>
-#include <cstdio>
 #include <filesystem>
+#include <cmath>
 using namespace std;
 using namespace std::chrono;
 
@@ -383,19 +382,49 @@ void mergesort(PagedArray& arreglo, int izq, int der) {
     merge(arreglo, izq, mid, der);
 }
 
-// insertion sort
-void insertionsort(PagedArray& arreglo, int n) {
-    for (int i = 1; i < n; i++) {
-        int clave = arreglo[i];
-        int j = i - 1;
+// countingsort
+void countingsort(PagedArray& arr, int n) {
+    if (n <= 1) {
+        return;
+    }
 
-        while (j >= 0 && arreglo[j] > clave) {
-            arreglo[j + 1] = arreglo[j];
-            j--;
+    int minval = arr[0];
+    int maxval = arr[0];
+
+    for (int i = 1; i < n; i++) {
+        int valor = arr[i];
+
+        if (valor < minval) {
+            minval = valor;
         }
 
-        arreglo[j + 1] = clave;
+        if (valor > maxval) {
+            maxval = valor;
+        }
     }
+
+    int rango = maxval - minval + 1;
+    int* conteo = new int[rango];
+
+    for (int i = 0; i < rango; i++) {
+        conteo[i] = 0;
+    }
+
+    for (int i = 0; i < n; i++) {
+        conteo[arr[i] - minval]++;
+    }
+
+    int indice = 0;
+
+    for (int i = 0; i < rango; i++) {
+        while (conteo[i] > 0) {
+            arr[indice] = i + minval;
+            indice++;
+            conteo[i]--;
+        }
+    }
+
+    delete[] conteo;
 }
 
 //heapsort
@@ -427,6 +456,100 @@ void heapsort(PagedArray& arr, int n) {
         intercambiar(arr, 0, i);
         heapify(arr, i, 0);
     }
+}
+
+//Introsort
+void insertionSortRange(PagedArray& arreglo, int low, int high) {
+    for (int i = low + 1; i <= high; i++) {
+        int clave = arreglo[i];
+        int j = i - 1;
+
+        while (j >= low && arreglo[j] > clave) {
+            arreglo[j + 1] = arreglo[j];
+            j--;
+        }
+
+        arreglo[j + 1] = clave;
+    }
+}
+
+void heapifyRange(PagedArray& arr, int low, int heapSize, int root) {
+    int largest = root;
+    int left = 2 * root + 1;
+    int right = 2 * root + 2;
+
+    if (left < heapSize && arr[low + left] > arr[low + largest]) {
+        largest = left;
+    }
+
+    if (right < heapSize && arr[low + right] > arr[low + largest]) {
+        largest = right;
+    }
+
+    if (largest != root) {
+        intercambiar(arr, low + root, low + largest);
+        heapifyRange(arr, low, heapSize, largest);
+    }
+}
+
+void heapsortRange(PagedArray& arr, int low, int high) {
+    int n = high - low + 1;
+
+    for (int i = n / 2 - 1; i >= 0; i--) {
+        heapifyRange(arr, low, n, i);
+    }
+
+    for (int i = n - 1; i > 0; i--) {
+        intercambiar(arr, low, low + i);
+        heapifyRange(arr, low, i, 0);
+    }
+}
+
+int partitionIntro(PagedArray& arreglo, int low, int high) {
+    int pivot = arreglo[high];
+    int i = low - 1;
+
+    for (int j = low; j < high; j++) {
+        if (arreglo[j] <= pivot) {
+            i++;
+            intercambiar(arreglo, i, j);
+        }
+    }
+
+    intercambiar(arreglo, i + 1, high);
+    return i + 1;
+}
+
+int profundidadMaxima(int n) {
+    return 2 * (int)log2(n);
+}
+
+void introsortUtil(PagedArray& arreglo, int low, int high, int depthLimit) {
+    int size = high - low + 1;
+
+    if (size <= 16) {
+        insertionSortRange(arreglo, low, high);
+        return;
+    }
+
+    if (depthLimit == 0) {
+        heapsortRange(arreglo, low, high);
+        return;
+    }
+
+    int pivot = partitionIntro(arreglo, low, high);
+
+    introsortUtil(arreglo, low, pivot - 1, depthLimit - 1);
+    introsortUtil(arreglo, pivot + 1, high, depthLimit - 1);
+}
+
+void introsort(PagedArray& arreglo, int n) {
+    if (n <= 1) {
+        return;
+    }
+
+    int depthLimit = profundidadMaxima(n);
+    introsortUtil(arreglo, 0, n - 1, depthLimit);
 }
 
 bool verificarOrden(const string& filename) {
@@ -606,18 +729,18 @@ int main(int argc, char* argv[]) {
     PagedArray arreglo(output, pageSize, pageCount);
     int n = arreglo.size();
 
-    if (algoritmo == "selection") {
-        algoritmoUsado = "selectionsort";
-        selectionsort(arreglo, n);
+    if (algoritmo == "intro") {
+        algoritmoUsado = "introsort";
+        introsort(arreglo, n);
     } else if (algoritmo == "quick") {
         algoritmoUsado = "quicksort";
         quicksort(arreglo, 0, n - 1);
     } else if (algoritmo == "merge") {
         algoritmoUsado = "mergesort";
         mergesort(arreglo, 0, n - 1);
-    } else if (algoritmo == "insertion") {
-        algoritmoUsado = "insertionsort";
-        insertionsort(arreglo, n);
+    } else if (algoritmo == "counting") {
+        algoritmoUsado = "countingsort";
+        countingsort(arreglo, n);
     } else if (algoritmo == "heap") {
         algoritmoUsado = "heapsort";
         heapsort(arreglo, n);
