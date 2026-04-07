@@ -487,6 +487,50 @@ bool generarArchivoLegible(const string& archivoBinario, const string& archivoLe
     return true;
 }
 
+bool guardarResultadoCSV(const string& nombreCSV,
+                         const string& algoritmo,
+                         const string& input,
+                         const string& output,
+                         int pageSize,
+                         int pageCount,
+                         int totalElementos,
+                         long long tiempoMs,
+                         int hits,
+                         int faults,
+                         bool ordenado,
+                         bool archivoLegibleGenerado) {
+    bool escribirEncabezado = false;
+
+    if (!filesystem::exists(nombreCSV) || filesystem::is_empty(nombreCSV)) {
+        escribirEncabezado = true;
+    }
+
+    ofstream archivoCSV(nombreCSV, ios::app);
+    if (!archivoCSV.is_open()) {
+        cerr << "Error al abrir el archivo CSV" << endl;
+        return false;
+    }
+
+    if (escribirEncabezado) {
+        archivoCSV << "algoritmo,input,output,pageSize,pageCount,totalElementos,tiempo_ms,hits,faults,ordenado,archivo_legible_generado\n";
+    }
+
+    archivoCSV << algoritmo << ","
+               << input << ","
+               << output << ","
+               << pageSize << ","
+               << pageCount << ","
+               << totalElementos << ","
+               << tiempoMs << ","
+               << hits << ","
+               << faults << ","
+               << (ordenado ? "true" : "false") << ","
+               << (archivoLegibleGenerado ? "true" : "false") << "\n";
+
+    archivoCSV.close();
+    return true;
+}
+
 bool copiarArchivoBinario(const string& origen, const string& destino) {
     ifstream archivoEntrada(origen, ios::binary);
     if (!archivoEntrada.is_open()) {
@@ -606,6 +650,25 @@ int main(int argc, char* argv[]) {
         cerr << "No se pudo generar el archivo legible." << endl;
         return 1;
     }
+
+    bool csvGuardado = guardarResultadoCSV("resultadossorter.csv",
+                                       algoritmoUsado,
+                                       input,
+                                       output,
+                                       pageSize,
+                                       pageCount,
+                                       totalElementos,
+                                       tiempoMs,
+                                       hitsFinales,
+                                       faultsFinales,
+                                       ordenado,
+                                       archivoLegibleGenerado);
+
+    if (!csvGuardado) {
+        cerr << "No se pudo guardar el resultado en el CSV." << endl;
+        return 1;
+    }
+
 
     return 0;
 }
