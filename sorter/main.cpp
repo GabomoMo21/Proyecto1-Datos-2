@@ -457,6 +457,36 @@ bool verificarOrden(const string& filename) {
     return true;
 }
 
+bool generarArchivoLegible(const string& archivoBinario, const string& archivoLegible) {
+    ifstream archivoEntrada(archivoBinario, ios::binary);
+    if (!archivoEntrada.is_open()) {
+        cerr << "Error al abrir archivo binario" << endl;
+        return false;
+    }
+
+    ofstream archivoSalida(archivoLegible);
+    if (!archivoSalida.is_open()) {
+        cerr << "Error al abrir archivo legible" << endl;
+        return false;
+    }
+
+    int value;
+    bool primero = true;
+
+    while (archivoEntrada.read((char*)&value, sizeof(int))) {
+        if (!primero) {
+            archivoSalida << ",";
+        }
+
+        archivoSalida << value;
+        primero = false;
+    }
+
+    archivoEntrada.close();
+    archivoSalida.close();
+    return true;
+}
+
 bool copiarArchivoBinario(const string& origen, const string& destino) {
     ifstream archivoEntrada(origen, ios::binary);
     if (!archivoEntrada.is_open()) {
@@ -475,6 +505,16 @@ bool copiarArchivoBinario(const string& origen, const string& destino) {
     archivoEntrada.close();
     archivoSalida.close();
     return true;
+}
+
+string construirNombreArchivoLegible(const string& output) {
+    size_t punto = output.find_last_of('.');
+
+    if (punto != string::npos) {
+        return output.substr(0, punto) + ".txt";
+    }
+
+    return output + ".txt";
 }
 
 void imprimirResumen(const string& nombreAlgoritmo, long long tiempoMs, PagedArray& arreglo){
@@ -560,6 +600,12 @@ int main(int argc, char* argv[]) {
         cout << "Desordenado" << endl;
     }
 
+    string outputLegible = construirNombreArchivoLegible(output);
+    bool archivoLegibleGenerado = generarArchivoLegible(output, outputLegible);
+    if (!archivoLegibleGenerado) {
+        cerr << "No se pudo generar el archivo legible." << endl;
+        return 1;
+    }
 
     return 0;
 }
