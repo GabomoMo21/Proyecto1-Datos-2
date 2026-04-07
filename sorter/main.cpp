@@ -325,6 +325,63 @@ void quicksort(PagedArray& arreglo, int low, int high) {
     }
 }
 
+// mergesort
+void merge(PagedArray& arreglo, int izq, int mid, int der) {
+    int n1 = mid - izq + 1;
+    int n2 = der - mid;
+
+    int* izquierda = new int[n1];
+    int* derecha = new int[n2];
+
+    for (int i = 0; i < n1; i++) {
+        izquierda[i] = arreglo[izq + i];
+    }
+
+    for (int i = 0; i < n2; i++) {
+        derecha[i] = arreglo[mid + 1 + i];
+    }
+
+    int i = 0;
+    int j = 0;
+    int k = izq;
+
+    while (i < n1 && j < n2) {
+        if (izquierda[i] <= derecha[j]) {
+            arreglo[k] = izquierda[i];
+            i++;
+        } else {
+            arreglo[k] = derecha[j];
+            j++;
+        }
+        k++;
+    }
+
+    while (i < n1) {
+        arreglo[k] = izquierda[i];
+        i++;
+        k++;
+    }
+
+    while (j < n2) {
+        arreglo[k] = derecha[j];
+        j++;
+        k++;
+    }
+
+    delete[] izquierda;
+    delete[] derecha;
+}
+
+void mergesort(PagedArray& arreglo, int izq, int der) {
+    if (izq >= der) {
+        return;
+    }
+
+    int mid = izq + (der - izq) / 2;
+    mergesort(arreglo, izq, mid);
+    mergesort(arreglo, mid + 1, der);
+    merge(arreglo, izq, mid, der);
+}
 
 bool verificarOrden(const string& filename) {
     ifstream archivo(filename, ios::binary);
@@ -353,6 +410,7 @@ bool verificarOrden(const string& filename) {
     archivo.close();
     return true;
 }
+
 
 bool copiarArchivoBinario(const string& origen, const string& destino) {
     ifstream archivoEntrada(origen, ios::binary);
@@ -435,7 +493,11 @@ int main(int argc, char* argv[]) {
     } else if (algoritmo == "quick") {
         algoritmoUsado = "quicksort";
         quicksort(arreglo, 0, n - 1);
-    }else {
+    } else if (algoritmo == "merge") {
+        algoritmoUsado = "mergesort";
+        mergesort(arreglo, 0, n - 1);
+    }
+    else {
         cerr << "Algoritmo no reconocido" << endl;
         return 1;
     }
@@ -450,20 +512,6 @@ int main(int argc, char* argv[]) {
     imprimirResumen(algoritmoUsado, tiempoMs, arreglo);
 
 
-
-    bool ordenado = verificarOrden(output);
-    if (ordenado) {
-        cout << "Ordenado" << endl;
-    } else {
-        cout << "Desordenado" << endl;
-    }
-
-    string outputLegible = construirNombreArchivoLegible(output);
-    bool archivoLegibleGenerado = generarArchivoLegible(output, outputLegible);
-    if (!archivoLegibleGenerado) {
-        cerr << "No se pudo generar el archivo legible." << endl;
-        return 1;
-    }
 
     return 0;
 }
