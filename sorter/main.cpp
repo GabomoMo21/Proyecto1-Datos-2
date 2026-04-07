@@ -383,6 +383,52 @@ void mergesort(PagedArray& arreglo, int izq, int der) {
     merge(arreglo, izq, mid, der);
 }
 
+// insertion sort
+void insertionsort(PagedArray& arreglo, int n) {
+    for (int i = 1; i < n; i++) {
+        int clave = arreglo[i];
+        int j = i - 1;
+
+        while (j >= 0 && arreglo[j] > clave) {
+            arreglo[j + 1] = arreglo[j];
+            j--;
+        }
+
+        arreglo[j + 1] = clave;
+    }
+}
+
+//heapsort
+void heapify(PagedArray& arr, int n, int i) {
+    int largest = i;
+    int l = 2 * i + 1;
+    int r = 2 * i + 2;
+
+    if (l < n && arr[l] > arr[largest]) {
+        largest = l;
+    }
+
+    if (r < n && arr[r] > arr[largest]) {
+        largest = r;
+    }
+
+    if (largest != i) {
+        intercambiar(arr, i, largest);
+        heapify(arr, n, largest);
+    }
+}
+
+void heapsort(PagedArray& arr, int n) {
+    for (int i = n / 2 - 1; i >= 0; i--) {
+        heapify(arr, n, i);
+    }
+
+    for (int i = n - 1; i > 0; i--) {
+        intercambiar(arr, 0, i);
+        heapify(arr, i, 0);
+    }
+}
+
 bool verificarOrden(const string& filename) {
     ifstream archivo(filename, ios::binary);
 
@@ -411,7 +457,6 @@ bool verificarOrden(const string& filename) {
     return true;
 }
 
-
 bool copiarArchivoBinario(const string& origen, const string& destino) {
     ifstream archivoEntrada(origen, ios::binary);
     if (!archivoEntrada.is_open()) {
@@ -430,16 +475,6 @@ bool copiarArchivoBinario(const string& origen, const string& destino) {
     archivoEntrada.close();
     archivoSalida.close();
     return true;
-}
-
-string construirNombreArchivoLegible(const string& output) {
-    size_t punto = output.find_last_of('.');
-
-    if (punto != string::npos) {
-        return output.substr(0, punto) + ".txt";
-    }
-
-    return output + ".txt";
 }
 
 void imprimirResumen(const string& nombreAlgoritmo, long long tiempoMs, PagedArray& arreglo){
@@ -496,8 +531,13 @@ int main(int argc, char* argv[]) {
     } else if (algoritmo == "merge") {
         algoritmoUsado = "mergesort";
         mergesort(arreglo, 0, n - 1);
-    }
-    else {
+    } else if (algoritmo == "insertion") {
+        algoritmoUsado = "insertionsort";
+        insertionsort(arreglo, n);
+    } else if (algoritmo == "heap") {
+        algoritmoUsado = "heapsort";
+        heapsort(arreglo, n);
+    }else {
         cerr << "Algoritmo no reconocido" << endl;
         return 1;
     }
@@ -511,6 +551,14 @@ int main(int argc, char* argv[]) {
 
     imprimirResumen(algoritmoUsado, tiempoMs, arreglo);
 
+
+
+    bool ordenado = verificarOrden(output);
+    if (ordenado) {
+        cout << "Ordenado" << endl;
+    } else {
+        cout << "Desordenado" << endl;
+    }
 
 
     return 0;
