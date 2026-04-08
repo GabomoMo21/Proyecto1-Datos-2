@@ -58,31 +58,69 @@ public:
           faults(0),
           siguiente(0) {
 
+        if (intsPerPage <= 0) {
+            throw invalid_argument("Error: pageSize debe ser mayor que 0");
+        }
+
+        if (pageCount <= 0) {
+            throw invalid_argument("Error: pageCount debe ser mayor que 0");
+        }
+
         archivo.open(filename, ios::in | ios::out | ios::binary);
         if (!archivo.is_open()) {
-            cerr << "Error al abrir el archivo " << filename << endl;
-            return;
+            throw runtime_error("Error al abrir el archivo: " + filename);
         }
 
         archivo.seekg(0, ios::end);
         streampos tamanoArchivo = archivo.tellg();
+
+        if (tamanoArchivo < 0) {
+            throw runtime_error("Error al obtener el tamaño del archivo");
+        }
+
         totalElementos = (int)(tamanoArchivo / (streampos)sizeof(int));
         archivo.seekg(0, ios::beg);
 
         paginas = new int*[pageCount];
         for (int i = 0; i < pageCount; i++) {
-            paginas[i] = new int[intsPerPage];
-            for (int j = 0; j < intsPerPage; j++) {
-                paginas[i][j] = 0;
-            }
+            paginas[i] = nullptr;
         }
 
-        pageNumbers = new int[pageCount];
-        dirtyFlags = new bool[pageCount];
+        try {
+            for (int i = 0; i < pageCount; i++) {
+                paginas[i] = new int[intsPerPage];
+                for (int j = 0; j < intsPerPage; j++) {
+                    paginas[i][j] = 0;
+                }
+            }
 
-        for (int i = 0; i < pageCount; i++) {
-            pageNumbers[i] = -1;
-            dirtyFlags[i] = false;
+            pageNumbers = new int[pageCount];
+            dirtyFlags = new bool[pageCount];
+
+            for (int i = 0; i < pageCount; i++) {
+                pageNumbers[i] = -1;
+                dirtyFlags[i] = false;
+            }
+        } catch (...) {
+            if (paginas != nullptr) {
+                for (int i = 0; i < pageCount; i++) {
+                    delete[] paginas[i];
+                }
+                delete[] paginas;
+                paginas = nullptr;
+            }
+
+            delete[] pageNumbers;
+            pageNumbers = nullptr;
+
+            delete[] dirtyFlags;
+            dirtyFlags = nullptr;
+
+            if (archivo.is_open()) {
+                archivo.close();
+            }
+
+            throw;
         }
     }
 
@@ -90,7 +128,10 @@ public:
     PagedArray& operator=(const PagedArray&) = delete;
 
     ~PagedArray() {
-        flushTodasLasPaginas();
+        try {
+            flushTodasLasPaginas();
+        } catch (...) {
+        }
 
         if (paginas != nullptr) {
             for (int i = 0; i < pageCount; i++) {
@@ -128,10 +169,7 @@ public:
     }
 
     int get(int indice) {
-        if (indice < 0 || indice >= totalElementos) {
-            cerr << "Indice fuera de rango: " << indice << endl;
-            return -1;
-        }
+        validarIndice(indice);
 
         int pageNumber = indice / intsPerPage;
         int offset = indice % intsPerPage;
@@ -141,10 +179,7 @@ public:
     }
 
     void set(int indice, int valor) {
-        if (indice < 0 || indice >= totalElementos) {
-            cerr << "Indice fuera de rango: " << indice << endl;
-            return;
-        }
+        validarIndice(indice);
 
         int pageNumber = indice / intsPerPage;
         int offset = indice % intsPerPage;
@@ -155,6 +190,12 @@ public:
     }
 
 private:
+    void validarIndice(int indice) const {
+        if (indice < 0 || indice >= totalElementos) {
+            throw out_of_range("Indice fuera de rango: " + to_string(indice));
+        }
+    }
+
     int buscarSlotPagina(int pageNumber) const {
         for (int i = 0; i < pageCount; i++) {
             if (pageNumbers[i] == pageNumber) {
@@ -173,30 +214,6 @@ private:
         return -1;
     }
 
-    void escribirPaginaSiEsNecesario(int slot) {
-        if (slot < 0 || slot >= pageCount) {
-            return;
-        }
-
-        if (pageNumbers[slot] == -1 || !dirtyFlags[slot]) {
-            return;
-        }
-
-        int pageNumber = pageNumbers[slot];
-        int elementosAEscribir = elementosValidosEnPagina(pageNumber);
-        int pageStartByte = pageNumber * intsPerPage * (int)sizeof(int);
-
-        archivo.clear();
-        archivo.seekp(pageStartByte, ios::beg);
-
-        for (int i = 0; i < elementosAEscribir; i++) {
-            archivo.write((char*)&paginas[slot][i], sizeof(int));
-        }
-
-        archivo.flush();
-        dirtyFlags[slot] = false;
-    }
-
     int elementosValidosEnPagina(int pageNumber) const {
         int inicio = pageNumber * intsPerPage;
 
@@ -213,21 +230,58 @@ private:
         return restantes;
     }
 
+    void escribirPaginaSiEsNecesario(int slot) {
+        if (slot < 0 || slot >= pageCount) {
+            throw out_of_range("Slot inválido al escribir página");
+        }
+
+        if (pageNumbers[slot] == -1 || !dirtyFlags[slot]) {
+            return;
+        }
+
+        int pageNumber = pageNumbers[slot];
+        int elementosAEscribir = elementosValidosEnPagina(pageNumber);
+        streampos pageStartByte = (streampos)pageNumber * intsPerPage * (streampos)sizeof(int);
+
+        archivo.clear();
+        archivo.seekp(pageStartByte, ios::beg);
+
+        if (!archivo) {
+            throw runtime_error("Error en seekp al escribir página");
+        }
+
+        archivo.write(reinterpret_cast<const char*>(paginas[slot]),
+                      (streamsize)(elementosAEscribir * (int)sizeof(int)));
+
+        if (!archivo) {
+            throw runtime_error("Error al escribir bloque de página");
+        }
+
+        dirtyFlags[slot] = false;
+    }
+
     void cargarPagina(int pageNumber, int slot) {
-        int pageStartByte = pageNumber * intsPerPage * (int)sizeof(int);
+        if (slot < 0 || slot >= pageCount) {
+            throw out_of_range("Slot inválido al cargar página");
+        }
+
         int elementosALeer = elementosValidosEnPagina(pageNumber);
+        streampos pageStartByte = (streampos)pageNumber * intsPerPage * (streampos)sizeof(int);
 
         archivo.clear();
         archivo.seekg(pageStartByte, ios::beg);
 
-        for (int i = 0; i < elementosALeer; i++) {
-            int value;
-            archivo.read((char*)&value, sizeof(int));
+        if (!archivo) {
+            throw runtime_error("Error en seekg al cargar página");
+        }
 
-            if (archivo) {
-                paginas[slot][i] = value;
-            } else {
-                paginas[slot][i] = 0;
+        if (elementosALeer > 0) {
+            archivo.read(reinterpret_cast<char*>(paginas[slot]),
+                         (streamsize)(elementosALeer * (int)sizeof(int)));
+
+            streamsize bytesEsperados = (streamsize)(elementosALeer * (int)sizeof(int));
+            if (archivo.gcount() != bytesEsperados) {
+                throw runtime_error("Error al leer bloque completo de página");
             }
         }
 
@@ -270,6 +324,11 @@ private:
 
         for (int i = 0; i < pageCount; i++) {
             escribirPaginaSiEsNecesario(i);
+        }
+
+        archivo.flush();
+        if (!archivo) {
+            throw runtime_error("Error al hacer flush final del archivo");
         }
     }
 };
