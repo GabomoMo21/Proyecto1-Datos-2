@@ -18,50 +18,68 @@ public:
         int indice;
 
     public:
-        Referencia(PagedArray& arr, int idx) : arreglo(arr), indice(idx) {} //guardar array e indice que apunta la referencia
+        Referencia(PagedArray& arr, int idx) : arreglo(arr), indice(idx) {}
 
-        //Obtener valor con un indice
         Referencia& operator=(int valor) {
             arreglo.set(indice, valor);
             return *this;
         }
-        //Cambiar hacer un cambio de valores a[i] = a[j]
+
         Referencia& operator=(const Referencia& otra) {
             int valor = (int)otra;
             arreglo.set(indice, valor);
             return *this;
         }
-        //leer arr[i] como int
+
         operator int() const {
             return arreglo.get(indice);
         }
     };
-//EStructuras para manejar la memoria
+
 private:
     int intsPerPage;
     int pageCount;
     fstream archivo;
+
     int** paginas;
+    int* memoriaPaginas;
     int* pageNumbers;
     bool* dirtyFlags;
+
+    // estructuras de soporte
+    bool* referenceBits;   // para clock
+    int* pageToSlot;       // mapeo pagina
+    int totalPages;
+    int punteroClock;
+    char* fileBuffer;
+    static const int BUFFER_SIZE = 1<<20;
+
+    // cache del ultimo acceso
+    int ultimoPageNumber;
+    int ultimoSlot;
+
     int totalElementos;
     long long hits;
     long long faults;
-    int siguiente;
 
-
-//constructor
 public:
     PagedArray(const string& filename, int pageSize, int cantidadPaginas)
         : intsPerPage(pageSize),
           pageCount(cantidadPaginas),
           paginas(nullptr),
+          memoriaPaginas(nullptr),
           pageNumbers(nullptr),
           dirtyFlags(nullptr),
+          referenceBits(nullptr),
+          pageToSlot(nullptr),
+          totalPages(0),
+          punteroClock(0),
+          ultimoPageNumber(-1),
+          ultimoSlot(-1),
+          fileBuffer(nullptr),
           totalElementos(0),
           hits(0),
-          faults(0),
-          siguiente(0) {
+          faults(0) {
 
         if (intsPerPage <= 0) {
             throw invalid_argument("Pagesize tiene que ser mayor a 0");
@@ -76,53 +94,65 @@ public:
             throw runtime_error("error al abrir el archivo " + filename);
         }
 
+        fileBuffer = new char[BUFFER_SIZE];
+        archivo.rdbuf()->pubsetbuf(fileBuffer, BUFFER_SIZE);
 
-        //calcular cantidad de enteros
         archivo.seekg(0, ios::end);
         streampos tamanoArchivo = archivo.tellg();
 
         if (tamanoArchivo < 0) {
-            throw runtime_error("error al obtener el tamaño del archivo");
+            throw runtime_error("error al obtener el tamano del archivo");
         }
 
         totalElementos = (int)(tamanoArchivo / (streampos)sizeof(int));
         archivo.seekg(0, ios::beg);
 
-        //REservar las paginas en memoria
+        totalPages = (totalElementos + intsPerPage - 1) / intsPerPage;
+
         paginas = new int*[pageCount];
+        memoriaPaginas = new int[pageCount * intsPerPage];
+
         for (int i = 0; i < pageCount; i++) {
-            paginas[i] = nullptr;
+            paginas[i] = memoriaPaginas + (i * intsPerPage);
         }
 
         try {
-            for (int i = 0; i < pageCount; i++) {
-                paginas[i] = new int[intsPerPage];
-                for (int j = 0; j < intsPerPage; j++) {
-                    paginas[i][j] = 0;
-                }
-            }
-
             pageNumbers = new int[pageCount];
             dirtyFlags = new bool[pageCount];
+            referenceBits = new bool[pageCount];
 
             for (int i = 0; i < pageCount; i++) {
-                pageNumbers[i] = -1; //slot vacio
-                dirtyFlags[i] = false; //ninguna pagina modificada al inicio
+                pageNumbers[i] = -1;
+                dirtyFlags[i] = false;
+                referenceBits[i] = false;
             }
-        } catch (...) { //liberar memoria si algo falla
-            if (paginas != nullptr) {
-                for (int i = 0; i < pageCount; i++) {
-                    delete[] paginas[i];
-                }
-                delete[] paginas;
-                paginas = nullptr;
+
+            pageToSlot = new int[totalPages];
+            for (int i = 0; i < totalPages; i++) {
+                pageToSlot[i] = -1;
             }
+
+        } catch (...) {
+            delete[] paginas;
+            paginas = nullptr;
+
+            delete[] memoriaPaginas;
+            memoriaPaginas = nullptr;
 
             delete[] pageNumbers;
             pageNumbers = nullptr;
 
             delete[] dirtyFlags;
             dirtyFlags = nullptr;
+
+            delete[] referenceBits;
+            referenceBits = nullptr;
+
+            delete[] pageToSlot;
+            pageToSlot = nullptr;
+
+            delete[] fileBuffer;
+            fileBuffer = nullptr;
 
             if (archivo.is_open()) {
                 archivo.close();
@@ -135,28 +165,25 @@ public:
     PagedArray(const PagedArray&) = delete;
     PagedArray& operator=(const PagedArray&) = delete;
 
-    //destructor
     ~PagedArray() {
         try {
-            flushTodasLasPaginas(); //escribir en dirtyflas antes de destruir
+            flushTodasLasPaginas();
         } catch (...) {
         }
 
-        if (paginas != nullptr) {
-            for (int i = 0; i < pageCount; i++) {
-                delete[] paginas[i];
-            }
-            delete[] paginas;
-        }
-
+        delete[] paginas;
+        delete[] memoriaPaginas;
         delete[] pageNumbers;
         delete[] dirtyFlags;
+        delete[] referenceBits;
+        delete[] pageToSlot;
+        delete[] fileBuffer;
 
         if (archivo.is_open()) {
             archivo.close();
         }
     }
-    //DEvolver referencia para read y write como un arreglo normal
+
     Referencia operator[](int indice) {
         return Referencia(*this, indice);
     }
@@ -177,13 +204,38 @@ public:
         return totalElementos;
     }
 
+    void swapIndices(int a, int b) {
+        validarIndice(a);
+        validarIndice(b);
+
+        if (a == b) {
+            return;
+        }
+
+        int pageA = a / intsPerPage;
+        int offsetA = a % intsPerPage;
+
+        int pageB = b / intsPerPage;
+        int offsetB = b % intsPerPage;
+
+        int slotA = asegurarPaginaCargada(pageA);
+        int slotB = asegurarPaginaCargada(pageB);
+
+        int temporal = paginas[slotA][offsetA];
+        paginas[slotA][offsetA] = paginas[slotB][offsetB];
+        paginas[slotB][offsetB] = temporal;
+
+        dirtyFlags[slotA] = true;
+        dirtyFlags[slotB] = true;
+    }
+
     int get(int indice) {
         validarIndice(indice);
 
         int pageNumber = indice / intsPerPage;
         int offset = indice % intsPerPage;
 
-        int slot = asegurarPaginaCargada(pageNumber); //revisar que la pagina este cargada para leer
+        int slot = asegurarPaginaCargada(pageNumber);
         return paginas[slot][offset];
     }
 
@@ -193,9 +245,8 @@ public:
         int pageNumber = indice / intsPerPage;
         int offset = indice % intsPerPage;
 
-        int slot = asegurarPaginaCargada(pageNumber); //revisar que la pagina este cargada para escribir
+        int slot = asegurarPaginaCargada(pageNumber);
         paginas[slot][offset] = valor;
-        //Marcar la pagina para escriirla
         dirtyFlags[slot] = true;
     }
 
@@ -205,16 +256,7 @@ private:
             throw out_of_range("Indice fuera de rango: " + to_string(indice));
         }
     }
-    //busca si la pagina esta cargada
-    int buscarSlotPagina(int pageNumber) const {
-        for (int i = 0; i < pageCount; i++) {
-            if (pageNumbers[i] == pageNumber) {
-                return i;
-            }
-        }
-        return -1;
-    }
-    //busca espacio en memoria
+
     int buscarSlotLibre() const {
         for (int i = 0; i < pageCount; i++) {
             if (pageNumbers[i] == -1) {
@@ -224,7 +266,6 @@ private:
         return -1;
     }
 
-    //Calcula enteros por pagina. Ultima pagina puede no estar completa
     int elementosValidosEnPagina(int pageNumber) const {
         int inicio = pageNumber * intsPerPage;
 
@@ -241,7 +282,6 @@ private:
         return restantes;
     }
 
-    //escribir pagina solo si fue modificada
     void escribirPaginaSiEsNecesario(int slot) {
         if (slot < 0 || slot >= pageCount) {
             throw out_of_range("slot invalido");
@@ -259,23 +299,22 @@ private:
         archivo.seekp(pageStartByte, ios::beg);
 
         if (!archivo) {
-            throw runtime_error("Error en seekp al escribir página");
+            throw runtime_error("Error en seekp al escribir pagina");
         }
 
         archivo.write(reinterpret_cast<const char*>(paginas[slot]),
                       (streamsize)(elementosAEscribir * (int)sizeof(int)));
 
         if (!archivo) {
-            throw runtime_error("Error al escribir bloque de página");
+            throw runtime_error("Error al escribir bloque de pagina");
         }
 
         dirtyFlags[slot] = false;
     }
 
-    //cargar pagina desde el archivo al slot
     void cargarPagina(int pageNumber, int slot) {
         if (slot < 0 || slot >= pageCount) {
-            throw out_of_range("Slot inválido al cargar página");
+            throw out_of_range("Slot invalido al cargar pagina");
         }
 
         int elementosALeer = elementosValidosEnPagina(pageNumber);
@@ -285,7 +324,7 @@ private:
         archivo.seekg(pageStartByte, ios::beg);
 
         if (!archivo) {
-            throw runtime_error("Error en seekg al cargar página");
+            throw runtime_error("Error en seekg al cargar pagina");
         }
 
         if (elementosALeer > 0) {
@@ -298,22 +337,49 @@ private:
             }
         }
 
-        //REllenar con 0 lo que no son datos reales
         for (int i = elementosALeer; i < intsPerPage; i++) {
             paginas[slot][i] = 0;
         }
 
         archivo.clear();
+
         pageNumbers[slot] = pageNumber;
         dirtyFlags[slot] = false;
+        referenceBits[slot] = true;
+        pageToSlot[pageNumber] = slot;
+
+        ultimoPageNumber = pageNumber;
+        ultimoSlot = slot;
     }
 
+    int elegirVictimaClock() {
+        while (true) {
+            if (!referenceBits[punteroClock]) {
+                int victima = punteroClock;
+                punteroClock = (punteroClock + 1) % pageCount;
+                return victima;
+            }
 
-    // Devuelve el slot donde esta cargada la pagina y si no esta REmplazar utilizando FIFO
+            referenceBits[punteroClock] = false;
+            punteroClock = (punteroClock + 1) % pageCount;
+        }
+    }
+
     int asegurarPaginaCargada(int pageNumber) {
-        int slotExistente = buscarSlotPagina(pageNumber);
+        // cache del ultimo acceso
+        if (pageNumber == ultimoPageNumber && ultimoSlot != -1) {
+            hits++;
+            referenceBits[ultimoSlot] = true;
+            return ultimoSlot;
+        }
+
+        // consulta O(1)
+        int slotExistente = pageToSlot[pageNumber];
         if (slotExistente != -1) {
             hits++;
+            referenceBits[slotExistente] = true;
+            ultimoPageNumber = pageNumber;
+            ultimoSlot = slotExistente;
             return slotExistente;
         }
 
@@ -325,15 +391,18 @@ private:
             return slotLibre;
         }
 
-        int slotReemplazo = siguiente;
-        escribirPaginaSiEsNecesario(slotReemplazo);
-        cargarPagina(pageNumber, slotReemplazo);
-        siguiente = (siguiente + 1) % pageCount;
+        int slotReemplazo = elegirVictimaClock();
 
+        int paginaVieja = pageNumbers[slotReemplazo];
+        if (paginaVieja != -1) {
+            escribirPaginaSiEsNecesario(slotReemplazo);
+            pageToSlot[paginaVieja] = -1;
+        }
+
+        cargarPagina(pageNumber, slotReemplazo);
         return slotReemplazo;
     }
 
-    //Escrbibe las paginas pendientes antes de cerrar el archivo
     void flushTodasLasPaginas() {
         if (paginas == nullptr || pageNumbers == nullptr || dirtyFlags == nullptr) {
             return;
@@ -352,12 +421,8 @@ private:
 
 // Algoritmos de ordenamiento
 
-
-//Intercambiar dos posiciones (funcion swap)
 void intercambiar(PagedArray& arreglo, int a, int b) {
-    int temporal = arreglo[a];
-    arreglo[a] = arreglo[b];
-    arreglo[b] = temporal;
+    arreglo.swapIndices(a,b);
 }
 
 // selectionsort
@@ -378,15 +443,13 @@ void selectionsort(PagedArray& arr, int n) {
 }
 
 // quicksort
-
-//utiliza el ultimo elemento como pivote
 int partition(PagedArray& arreglo, int low, int high) {
     int pivot = arreglo[high];
     int i = low - 1;
 
     for (int j = low; j <= high - 1; j++) {
         int actual = arreglo[j];
-        if (actual <= pivot) {
+        if (actual < pivot) {
             i++;
             intercambiar(arreglo, i, j);
         }
@@ -395,7 +458,7 @@ int partition(PagedArray& arreglo, int low, int high) {
     intercambiar(arreglo, i + 1, high);
     return i + 1;
 }
-//ordena de a la izq y der del pivote
+
 void quicksort(PagedArray& arreglo, int low, int high) {
     if (low < high) {
         int pi = partition(arreglo, low, high);
@@ -404,10 +467,7 @@ void quicksort(PagedArray& arreglo, int low, int high) {
     }
 }
 
-
 // mergesort
-
-//une dos mitades ordenadas y las vuelve a escribir en el arreglo
 void merge(PagedArray& arreglo, int izq, int mid, int der) {
     int n1 = mid - izq + 1;
     int n2 = der - mid;
@@ -454,7 +514,6 @@ void merge(PagedArray& arreglo, int izq, int mid, int der) {
     delete[] derecha;
 }
 
-//divide el arreglo hasta llegar a casos pequeños
 void mergesort(PagedArray& arreglo, int izq, int der) {
     if (izq >= der) {
         return;
@@ -467,8 +526,6 @@ void mergesort(PagedArray& arreglo, int izq, int der) {
 }
 
 // countingsort
-
-//countingsort se puede utilizar por son enteros en un rango determinado
 void countingsort(PagedArray& arr, int n) {
     if (n <= 1) {
         return;
@@ -516,20 +573,35 @@ void countingsort(PagedArray& arr, int n) {
 // heapsort
 void heapify(PagedArray& arr, int n, int i) {
     int largest = i;
-    int l = 2 * i + 1;
-    int r = 2 * i + 2;
 
-    if (l < n && arr[l] > arr[largest]) {
-        largest = l;
-    }
+    while (true) {
+        int l = 2 * i + 1;
+        int r = 2 * i + 2;
+        largest = i;
 
-    if (r < n && arr[r] > arr[largest]) {
-        largest = r;
-    }
+        int valorLargest = arr[largest];
 
-    if (largest != i) {
+        if (l < n) {
+            int valorL = arr[l];
+            if (valorL > valorLargest) {
+                largest = l;
+                valorLargest = valorL;
+            }
+        }
+
+        if (r < n) {
+            int valorR = arr[r];
+            if (valorR > valorLargest) {
+                largest = r;
+            }
+        }
+
+        if (largest == i) {
+            break;
+        }
+
         intercambiar(arr, i, largest);
-        heapify(arr, n, largest);
+        i = largest;
     }
 }
 
@@ -545,8 +617,6 @@ void heapsort(PagedArray& arr, int n) {
 }
 
 // introsort
-
-//INsertionsort para subarreglos pequeños
 void insertionSortRange(PagedArray& arreglo, int low, int high) {
     for (int i = low + 1; i <= high; i++) {
         int clave = arreglo[i];
@@ -560,7 +630,7 @@ void insertionSortRange(PagedArray& arreglo, int low, int high) {
         arreglo[j + 1] = clave;
     }
 }
-//heapify como el de heapsort pero aplicado a partes especificas del arreglo
+
 void heapifyRange(PagedArray& arr, int low, int heapSize, int root) {
     int largest = root;
     int left = 2 * root + 1;
@@ -580,7 +650,6 @@ void heapifyRange(PagedArray& arr, int low, int heapSize, int root) {
     }
 }
 
-//heapsort aplicado a un solo subarreglo
 void heapsortRange(PagedArray& arr, int low, int high) {
     int n = high - low + 1;
 
@@ -594,7 +663,6 @@ void heapsortRange(PagedArray& arr, int low, int high) {
     }
 }
 
-//partition con pivote para el introsort
 int partitionIntro(PagedArray& arreglo, int low, int high) {
     int pivot = arreglo[high];
     int i = low - 1;
@@ -610,11 +678,10 @@ int partitionIntro(PagedArray& arreglo, int low, int high) {
     return i + 1;
 }
 
-//limite de profundidad para evitar el peor caso de quicksort
 int profundidadMaxima(int n) {
     return 2 * (int)log2(n);
 }
-//si el tramo es pequeño usa insertion, si la profundidad es alta pasa a heap y si no sigue econ quick
+
 void introsortUtil(PagedArray& arreglo, int low, int high, int depthLimit) {
     int size = high - low + 1;
 
@@ -634,7 +701,6 @@ void introsortUtil(PagedArray& arreglo, int low, int high, int depthLimit) {
     introsortUtil(arreglo, pivot + 1, high, depthLimit - 1);
 }
 
-//funcion principal de introsort
 void introsort(PagedArray& arreglo, int n) {
     if (n <= 1) {
         return;
@@ -643,7 +709,7 @@ void introsort(PagedArray& arreglo, int n) {
     int depthLimit = profundidadMaxima(n);
     introsortUtil(arreglo, 0, n - 1, depthLimit);
 }
-//revisar orden
+
 bool verificarOrden(const string& filename) {
     ifstream archivo(filename, ios::binary);
 
@@ -673,16 +739,15 @@ bool verificarOrden(const string& filename) {
 }
 
 string construirNombreArchivoLegible(const string& output) {
-    size_t punto = output.find_last_of('.'); //eliminar la extension de archivo
+    size_t punto = output.find_last_of('.');
 
     if (punto != string::npos) {
         return output.substr(0, punto) + ".txt";
     }
 
-    return output + ".txt"; //agrerar el .txt
+    return output + ".txt";
 }
 
-//Archivo legible
 bool generarArchivoLegible(const string& archivoBinario, const string& archivoLegible) {
     ifstream archivoEntrada(archivoBinario, ios::binary);
     if (!archivoEntrada.is_open()) {
@@ -699,12 +764,12 @@ bool generarArchivoLegible(const string& archivoBinario, const string& archivoLe
     int value;
     bool primero = true;
 
-    while (archivoEntrada.read((char*)&value, sizeof(int))) { //leer el valor y pasarlo a entero
+    while (archivoEntrada.read((char*)&value, sizeof(int))) {
         if (!primero) {
-            archivoSalida << ","; //para evitar una , al inicio
+            archivoSalida << ",";
         }
 
-        archivoSalida << value; //escribir el valor como entero
+        archivoSalida << value;
         primero = false;
     }
 
@@ -712,7 +777,7 @@ bool generarArchivoLegible(const string& archivoBinario, const string& archivoLe
     archivoSalida.close();
     return true;
 }
-//csv de resultados
+
 bool guardarResultadoCSV(const string& nombreCSV,
                          const string& algoritmo,
                          const string& input,
@@ -758,7 +823,7 @@ bool guardarResultadoCSV(const string& nombreCSV,
     archivoCSV.close();
     return true;
 }
-//copiar archivo para trabajar en el output
+
 bool copiarArchivoBinario(const string& origen, const string& destino) {
     ifstream archivoEntrada(origen, ios::binary);
     if (!archivoEntrada.is_open()) {
@@ -772,13 +837,12 @@ bool copiarArchivoBinario(const string& origen, const string& destino) {
         return false;
     }
 
-    archivoSalida << archivoEntrada.rdbuf(); //copiar con un bufer
+    archivoSalida << archivoEntrada.rdbuf();
 
     archivoEntrada.close();
     archivoSalida.close();
     return true;
 }
-
 
 void imprimirResumen(const string& nombreAlgoritmo,
                      long long tiempoOrdenamientoMs,
@@ -952,7 +1016,7 @@ int main(int argc, char* argv[]) {
 
         imprimirResumen(algoritmoUsado, tiempoOrdenamientoMs, tiempoTotalMs, arreglo);
     } catch (const exception& e) {
-        cerr << "Error durante la ejecución: " << e.what() << endl;
+        cerr << "Error durante la ejecucion: " << e.what() << endl;
         return 1;
     }
 
