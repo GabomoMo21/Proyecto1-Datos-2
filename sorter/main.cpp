@@ -419,6 +419,32 @@ private:
     }
 };
 
+bool crearArchivoTemporalConTamano(const string& nombre, int totalElementos) {
+    ofstream archivo(nombre, ios::binary | ios::trunc);
+    if (!archivo.is_open()) {
+        cerr << "No se pudo crear el archivo temporal" << endl;
+        return false;
+    }
+
+    if (totalElementos <= 0) {
+        archivo.close();
+        return true;
+    }
+
+    archivo.seekp((streamoff)totalElementos * sizeof(int) - 1, ios::beg);
+    char cero = 0;
+    archivo.write(&cero, 1);
+
+    if (!archivo) {
+        cerr << "No se pudo dimensionar el archivo temporal" << endl;
+        archivo.close();
+        return false;
+    }
+
+    archivo.close();
+    return true;
+}
+
 // Algoritmos de ordenamiento
 
 void intercambiar(PagedArray& arreglo, int a, int b) {
@@ -710,6 +736,66 @@ void introsort(PagedArray& arreglo, int n) {
     introsortUtil(arreglo, 0, n - 1, depthLimit);
 }
 
+void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string& archivoTemporal) {
+    if (n <= 1) return;
+
+    if (!crearArchivoTemporalConTamano(archivoTemporal, n)) {
+        throw runtime_error("No se pudo crear archivo temporal");
+    }
+
+    PagedArray temp(archivoTemporal, pageSize, pageCount);
+
+    PagedArray* src = &arr;
+    PagedArray* dst = &temp;
+
+    const int BASE = 32;
+    const int BITS_POR_PASADA = 5;
+    const int MASCARA = BASE - 1; // 31 = 0x1F
+
+    for (int shift = 0; shift < 32; shift += BITS_POR_PASADA) {
+        int conteo[BASE];
+        int posiciones[BASE];
+
+        for (int i = 0; i < BASE; i++) {
+            conteo[i] = 0;
+            posiciones[i] = 0;
+        }
+
+        // contar
+        for (int i = 0; i < n; i++) {
+            int valor = (*src)[i];
+            unsigned int clave = ((unsigned int)valor) ^ 0x80000000u;
+            int digito = (clave >> shift) & MASCARA;
+            conteo[digito]++;
+        }
+
+        // prefijos
+        for (int i = 1; i < BASE; i++) {
+            posiciones[i] = posiciones[i - 1] + conteo[i - 1];
+        }
+
+        // distribuir
+        for (int i = 0; i < n; i++) {
+            int valor = (*src)[i];
+            unsigned int clave = ((unsigned int)valor) ^ 0x80000000u;
+            int digito = (clave >> shift) & MASCARA;
+
+            int destino = posiciones[digito];
+            (*dst)[destino] = valor;
+            posiciones[digito]++;
+        }
+
+        swap(src, dst);
+    }
+
+    if (src != &arr) {
+        for (int i = 0; i < n; i++) {
+            arr[i] = (*src)[i];
+        }
+    }
+}
+
+
 bool verificarOrden(const string& filename) {
     ifstream archivo(filename, ios::binary);
 
@@ -944,7 +1030,8 @@ bool validarArgumentos(int argc,
         return false;
     }
 
-    if (algoritmo != "intro" &&
+    if (algoritmo != "radix" &&
+        algoritmo != "intro" &&
         algoritmo != "quick" &&
         algoritmo != "merge" &&
         algoritmo != "counting" &&
@@ -990,7 +1077,12 @@ int main(int argc, char* argv[]) {
         if (algoritmo == "intro") {
             algoritmoUsado = "introsort";
             introsort(arreglo, n);
-        } else if (algoritmo == "quick") {
+        } else if (algoritmo == "radix") {
+            algoritmoUsado = "radixsort";
+            string archivoTemporal = output + "radix.tmp.bin";
+            radixsort(arreglo, n, pageSize, pageCount, archivoTemporal);
+            remove(archivoTemporal.c_str());
+        }else if (algoritmo == "quick") {
             algoritmoUsado = "quicksort";
             quicksort(arreglo, 0, n - 1);
         } else if (algoritmo == "merge") {

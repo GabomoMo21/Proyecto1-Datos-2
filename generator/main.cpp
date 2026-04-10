@@ -90,8 +90,11 @@ long long obtenerCantidadEnteros(const string& opcion) {
     else if (opcion == "MEDIUM") {
         return (512LL * 1024 * 1024) / 4;
     }
-    else {
+    else if (opcion == "LARGE"){
         return (1024LL * 1024 * 1024) / 4;
+    }
+    else {
+        return -1;
     }
 }
 
