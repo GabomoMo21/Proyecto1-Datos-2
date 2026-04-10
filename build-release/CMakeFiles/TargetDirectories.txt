@@ -1,4 +1,0 @@
-/home/gabo/Documents/Proyecto1-Datos-2/build-release/CMakeFiles/sorter.dir
-/home/gabo/Documents/Proyecto1-Datos-2/build-release/CMakeFiles/generator.dir
-/home/gabo/Documents/Proyecto1-Datos-2/build-release/CMakeFiles/edit_cache.dir
-/home/gabo/Documents/Proyecto1-Datos-2/build-release/CMakeFiles/rebuild_cache.dir

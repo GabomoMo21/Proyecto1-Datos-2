@@ -1,4 +1,18 @@
-.idea/
+# build
+build/
+build-release/
+
+# cmake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# binarios
+*.o
+*.exe
+*.out
+*.bin.idea/
 cmake-build-debug/
 generator/cmake-build-debug/
 .idea/
