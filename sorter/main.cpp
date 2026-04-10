@@ -6,9 +6,7 @@
 #include <filesystem>
 #include <cmath>
 #include <stdexcept>
-
-using namespace std;
-using namespace std::chrono;
+#include <cstdio>
 
 class PagedArray {
 public:
@@ -39,7 +37,7 @@ public:
 private:
     int intsPerPage;
     int pageCount;
-    fstream archivo;
+    std::fstream archivo;
 
     int** paginas;
     int* memoriaPaginas;
@@ -52,7 +50,7 @@ private:
     int totalPages;
     int punteroClock;
     char* fileBuffer;
-    static const int BUFFER_SIZE = 1<<20;
+    static const int BUFFER_SIZE = 1 << 20;
 
     // cache del ultimo acceso
     int ultimoPageNumber;
@@ -63,7 +61,8 @@ private:
     long long faults;
 
 public:
-    PagedArray(const string& filename, int pageSize, int cantidadPaginas)
+    // constructor, abre el archivo y prepara toda la memoria del paged array
+    PagedArray(const std::string& filename, int pageSize, int cantidadPaginas)
         : intsPerPage(pageSize),
           pageCount(cantidadPaginas),
           paginas(nullptr),
@@ -82,31 +81,32 @@ public:
           faults(0) {
 
         if (intsPerPage <= 0) {
-            throw invalid_argument("Pagesize tiene que ser mayor a 0");
+            throw std::invalid_argument("Pagesize tiene que ser mayor a 0");
         }
 
         if (pageCount <= 0) {
-            throw invalid_argument("pageCount tiene que ser mayor a 0");
+            throw std::invalid_argument("pageCount tiene que ser mayor a 0");
         }
 
-        archivo.open(filename, ios::in | ios::out | ios::binary);
+        archivo.open(filename, std::ios::in | std::ios::out | std::ios::binary);
         if (!archivo.is_open()) {
-            throw runtime_error("error al abrir el archivo " + filename);
+            throw std::runtime_error("error al abrir el archivo " + filename);
         }
 
         fileBuffer = new char[BUFFER_SIZE];
         archivo.rdbuf()->pubsetbuf(fileBuffer, BUFFER_SIZE);
 
-        archivo.seekg(0, ios::end);
-        streampos tamanoArchivo = archivo.tellg();
+        archivo.seekg(0, std::ios::end);
+        std::streampos tamanoArchivo = archivo.tellg();
 
         if (tamanoArchivo < 0) {
-            throw runtime_error("error al obtener el tamano del archivo");
+            throw std::runtime_error("error al obtener el tamano del archivo");
         }
 
-        totalElementos = (int)(tamanoArchivo / (streampos)sizeof(int));
-        archivo.seekg(0, ios::beg);
+        totalElementos = (int)(tamanoArchivo / (std::streampos)sizeof(int));
+        archivo.seekg(0, std::ios::beg);
 
+        // obtiene cuantas paginas logicas tiene el archivo
         totalPages = (totalElementos + intsPerPage - 1) / intsPerPage;
 
         paginas = new int*[pageCount];
@@ -165,6 +165,7 @@ public:
     PagedArray(const PagedArray&) = delete;
     PagedArray& operator=(const PagedArray&) = delete;
 
+    // destructor, escribe paginas sucias y libera memoria
     ~PagedArray() {
         try {
             flushTodasLasPaginas();
@@ -204,6 +205,7 @@ public:
         return totalElementos;
     }
 
+    // intercambia dos posiciones del arreglo paginado
     void swapIndices(int a, int b) {
         validarIndice(a);
         validarIndice(b);
@@ -253,7 +255,7 @@ public:
 private:
     void validarIndice(int indice) const {
         if (indice < 0 || indice >= totalElementos) {
-            throw out_of_range("Indice fuera de rango: " + to_string(indice));
+            throw std::out_of_range("Indice fuera de rango: " + std::to_string(indice));
         }
     }
 
@@ -266,6 +268,7 @@ private:
         return -1;
     }
 
+    // calcula cuantos elementos reales tiene esa pagina
     int elementosValidosEnPagina(int pageNumber) const {
         int inicio = pageNumber * intsPerPage;
 
@@ -282,9 +285,10 @@ private:
         return restantes;
     }
 
+    // escribe una pagina solo si esta sucia
     void escribirPaginaSiEsNecesario(int slot) {
         if (slot < 0 || slot >= pageCount) {
-            throw out_of_range("slot invalido");
+            throw std::out_of_range("slot invalido");
         }
 
         if (pageNumbers[slot] == -1 || !dirtyFlags[slot]) {
@@ -293,50 +297,52 @@ private:
 
         int pageNumber = pageNumbers[slot];
         int elementosAEscribir = elementosValidosEnPagina(pageNumber);
-        streampos pageStartByte = (streampos)pageNumber * intsPerPage * (streampos)sizeof(int);
+        std::streampos pageStartByte = (std::streampos)pageNumber * intsPerPage * (std::streampos)sizeof(int);
 
         archivo.clear();
-        archivo.seekp(pageStartByte, ios::beg);
+        archivo.seekp(pageStartByte, std::ios::beg);
 
         if (!archivo) {
-            throw runtime_error("Error en seekp al escribir pagina");
+            throw std::runtime_error("Error en seekp al escribir pagina");
         }
 
         archivo.write(reinterpret_cast<const char*>(paginas[slot]),
-                      (streamsize)(elementosAEscribir * (int)sizeof(int)));
+                      (std::streamsize)(elementosAEscribir * (int)sizeof(int)));
 
         if (!archivo) {
-            throw runtime_error("Error al escribir bloque de pagina");
+            throw std::runtime_error("Error al escribir bloque de pagina");
         }
 
         dirtyFlags[slot] = false;
     }
 
+    // carga una pagina del archivo al slot indicado
     void cargarPagina(int pageNumber, int slot) {
         if (slot < 0 || slot >= pageCount) {
-            throw out_of_range("Slot invalido al cargar pagina");
+            throw std::out_of_range("Slot invalido al cargar pagina");
         }
 
         int elementosALeer = elementosValidosEnPagina(pageNumber);
-        streampos pageStartByte = (streampos)pageNumber * intsPerPage * (streampos)sizeof(int);
+        std::streampos pageStartByte = (std::streampos)pageNumber * intsPerPage * (std::streampos)sizeof(int);
 
         archivo.clear();
-        archivo.seekg(pageStartByte, ios::beg);
+        archivo.seekg(pageStartByte, std::ios::beg);
 
         if (!archivo) {
-            throw runtime_error("Error en seekg al cargar pagina");
+            throw std::runtime_error("Error en seekg al cargar pagina");
         }
 
         if (elementosALeer > 0) {
             archivo.read(reinterpret_cast<char*>(paginas[slot]),
-                         (streamsize)(elementosALeer * (int)sizeof(int)));
+                         (std::streamsize)(elementosALeer * (int)sizeof(int)));
 
-            streamsize bytesEsperados = (streamsize)(elementosALeer * (int)sizeof(int));
+            std::streamsize bytesEsperados = (std::streamsize)(elementosALeer * (int)sizeof(int));
             if (archivo.gcount() != bytesEsperados) {
-                throw runtime_error("Error al leer bloque");
+                throw std::runtime_error("Error al leer bloque");
             }
         }
 
+        // rellena con ceros el resto si es la ultima pagina incompleta
         for (int i = elementosALeer; i < intsPerPage; i++) {
             paginas[slot][i] = 0;
         }
@@ -352,6 +358,7 @@ private:
         ultimoSlot = slot;
     }
 
+    // elige victima usando clock
     int elegirVictimaClock() {
         while (true) {
             if (!referenceBits[punteroClock]) {
@@ -365,6 +372,7 @@ private:
         }
     }
 
+    // asegura que la pagina este cargada y devuelve el slot
     int asegurarPaginaCargada(int pageNumber) {
         // cache del ultimo acceso
         if (pageNumber == ultimoPageNumber && ultimoSlot != -1) {
@@ -373,7 +381,7 @@ private:
             return ultimoSlot;
         }
 
-        // consulta O(1)
+        // consulta directa con pageToSlot
         int slotExistente = pageToSlot[pageNumber];
         if (slotExistente != -1) {
             hits++;
@@ -403,6 +411,7 @@ private:
         return slotReemplazo;
     }
 
+    // hace flush final de todas las paginas sucias
     void flushTodasLasPaginas() {
         if (paginas == nullptr || pageNumbers == nullptr || dirtyFlags == nullptr) {
             return;
@@ -414,15 +423,15 @@ private:
 
         archivo.flush();
         if (!archivo) {
-            throw runtime_error("Error al hacer flush final del archivo");
+            throw std::runtime_error("Error al hacer flush final del archivo");
         }
     }
 };
 
-bool crearArchivoTemporalConTamano(const string& nombre, int totalElementos) {
-    ofstream archivo(nombre, ios::binary | ios::trunc);
+bool crearArchivoTemporalConTamano(const std::string& nombre, int totalElementos) {
+    std::ofstream archivo(nombre, std::ios::binary | std::ios::trunc);
     if (!archivo.is_open()) {
-        cerr << "No se pudo crear el archivo temporal" << endl;
+        std::cerr << "No se pudo crear el archivo temporal" << std::endl;
         return false;
     }
 
@@ -431,12 +440,12 @@ bool crearArchivoTemporalConTamano(const string& nombre, int totalElementos) {
         return true;
     }
 
-    archivo.seekp((streamoff)totalElementos * sizeof(int) - 1, ios::beg);
+    archivo.seekp((std::streamoff)totalElementos * sizeof(int) - 1, std::ios::beg);
     char cero = 0;
     archivo.write(&cero, 1);
 
     if (!archivo) {
-        cerr << "No se pudo dimensionar el archivo temporal" << endl;
+        std::cerr << "No se pudo dimensionar el archivo temporal" << std::endl;
         archivo.close();
         return false;
     }
@@ -445,27 +454,9 @@ bool crearArchivoTemporalConTamano(const string& nombre, int totalElementos) {
     return true;
 }
 
-// Algoritmos de ordenamiento
-
+// intercambia dos posiciones usando la funcion propia del paged array
 void intercambiar(PagedArray& arreglo, int a, int b) {
-    arreglo.swapIndices(a,b);
-}
-
-// selectionsort
-void selectionsort(PagedArray& arr, int n) {
-    for (int i = 0; i < n - 1; i++) {
-        int min_idx = i;
-
-        for (int j = i + 1; j < n; j++) {
-            if (arr[j] < arr[min_idx]) {
-                min_idx = j;
-            }
-        }
-
-        if (min_idx != i) {
-            intercambiar(arr, i, min_idx);
-        }
-    }
+    arreglo.swapIndices(a, b);
 }
 
 // quicksort
@@ -493,7 +484,7 @@ void quicksort(PagedArray& arreglo, int low, int high) {
     }
 }
 
-// mergesort
+// merge de mergesort, usa arreglos auxiliares pequeños para unir dos mitades
 void merge(PagedArray& arreglo, int izq, int mid, int der) {
     int n1 = mid - izq + 1;
     int n2 = der - mid;
@@ -551,7 +542,7 @@ void mergesort(PagedArray& arreglo, int izq, int der) {
     merge(arreglo, izq, mid, der);
 }
 
-// countingsort
+// counting sort, funciona bien cuando el rango de valores es pequeno
 void countingsort(PagedArray& arr, int n) {
     if (n <= 1) {
         return;
@@ -572,7 +563,14 @@ void countingsort(PagedArray& arr, int n) {
         }
     }
 
-    int rango = maxval - minval + 1;
+    // valida el rango para evitar reservar memoria imposible o invalida
+    long long rangoReal = (long long)maxval - (long long)minval + 1;
+
+    if (rangoReal <= 0 || rangoReal > 10000000LL) {
+        throw std::runtime_error("Counting Sort no es viable para este rango de datos");
+    }
+
+    int rango = (int)rangoReal;
     int* conteo = new int[rango];
 
     for (int i = 0; i < rango; i++) {
@@ -642,7 +640,7 @@ void heapsort(PagedArray& arr, int n) {
     }
 }
 
-// introsort
+// insertion sort para tramos pequenos dentro de introsort
 void insertionSortRange(PagedArray& arreglo, int low, int high) {
     for (int i = low + 1; i <= high; i++) {
         int clave = arreglo[i];
@@ -704,6 +702,7 @@ int partitionIntro(PagedArray& arreglo, int low, int high) {
     return i + 1;
 }
 
+// calcula la profundidad maxima para cambiar de quick a heap si hace falta
 int profundidadMaxima(int n) {
     return 2 * (int)log2(n);
 }
@@ -736,11 +735,12 @@ void introsort(PagedArray& arreglo, int n) {
     introsortUtil(arreglo, 0, n - 1, depthLimit);
 }
 
-void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string& archivoTemporal) {
+// radix sort usando archivo temporal y paged array
+void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const std::string& archivoTemporal) {
     if (n <= 1) return;
 
     if (!crearArchivoTemporalConTamano(archivoTemporal, n)) {
-        throw runtime_error("No se pudo crear archivo temporal");
+        throw std::runtime_error("No se pudo crear archivo temporal");
     }
 
     PagedArray temp(archivoTemporal, pageSize, pageCount);
@@ -750,7 +750,7 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string
 
     const int BASE = 32;
     const int BITS_POR_PASADA = 5;
-    const int MASCARA = BASE - 1; // 31 = 0x1F
+    const int MASCARA = BASE - 1;
 
     for (int shift = 0; shift < 32; shift += BITS_POR_PASADA) {
         int conteo[BASE];
@@ -761,7 +761,7 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string
             posiciones[i] = 0;
         }
 
-        // contar
+        // cuenta cuantos elementos van en cada digito
         for (int i = 0; i < n; i++) {
             int valor = (*src)[i];
             unsigned int clave = ((unsigned int)valor) ^ 0x80000000u;
@@ -769,12 +769,12 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string
             conteo[digito]++;
         }
 
-        // prefijos
+        // calcula posiciones iniciales acumuladas
         for (int i = 1; i < BASE; i++) {
             posiciones[i] = posiciones[i - 1] + conteo[i - 1];
         }
 
-        // distribuir
+        // distribuye los elementos en el arreglo destino
         for (int i = 0; i < n; i++) {
             int valor = (*src)[i];
             unsigned int clave = ((unsigned int)valor) ^ 0x80000000u;
@@ -785,9 +785,10 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string
             posiciones[digito]++;
         }
 
-        swap(src, dst);
+        std::swap(src, dst);
     }
 
+    // si el resultado final quedo en el temporal, lo copia de vuelta
     if (src != &arr) {
         for (int i = 0; i < n; i++) {
             arr[i] = (*src)[i];
@@ -795,12 +796,13 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const string
     }
 }
 
-
-bool verificarOrden(const string& filename) {
-    ifstream archivo(filename, ios::binary);
+// revisa si el archivo final quedo ordenado
+/*
+bool verificarOrden(const std::string& filename) {
+    std::ifstream archivo(filename, std::ios::binary);
 
     if (!archivo.is_open()) {
-        cerr << "Error al abrir archivo para verificacion" << endl;
+        std::cerr << "Error al abrir archivo para verificacion" << std::endl;
         return false;
     }
 
@@ -813,7 +815,7 @@ bool verificarOrden(const string& filename) {
 
     while (archivo.read((char*)&actual, sizeof(int))) {
         if (actual < anterior) {
-            cerr << "Desorden detectado: " << anterior << " > " << actual << endl;
+            std::cerr << "Desorden detectado: " << anterior << " > " << actual << std::endl;
             archivo.close();
             return false;
         }
@@ -823,27 +825,28 @@ bool verificarOrden(const string& filename) {
     archivo.close();
     return true;
 }
-
-string construirNombreArchivoLegible(const string& output) {
+*/
+std::string construirNombreArchivoLegible(const std::string& output) {
     size_t punto = output.find_last_of('.');
 
-    if (punto != string::npos) {
+    if (punto != std::string::npos) {
         return output.substr(0, punto) + ".txt";
     }
 
     return output + ".txt";
 }
 
-bool generarArchivoLegible(const string& archivoBinario, const string& archivoLegible) {
-    ifstream archivoEntrada(archivoBinario, ios::binary);
+// genera un archivo de texto separado por comas a partir del binario ordenado
+bool generarArchivoLegible(const std::string& archivoBinario, const std::string& archivoLegible) {
+    std::ifstream archivoEntrada(archivoBinario, std::ios::binary);
     if (!archivoEntrada.is_open()) {
-        cerr << "Error al abrir archivo binario" << endl;
+        std::cerr << "Error al abrir archivo binario" << std::endl;
         return false;
     }
 
-    ofstream archivoSalida(archivoLegible);
+    std::ofstream archivoSalida(archivoLegible);
     if (!archivoSalida.is_open()) {
-        cerr << "Error al abrir archivo legible" << endl;
+        std::cerr << "Error al abrir archivo legible" << std::endl;
         return false;
     }
 
@@ -864,62 +867,17 @@ bool generarArchivoLegible(const string& archivoBinario, const string& archivoLe
     return true;
 }
 
-bool guardarResultadoCSV(const string& nombreCSV,
-                         const string& algoritmo,
-                         const string& input,
-                         const string& output,
-                         int pageSize,
-                         int pageCount,
-                         int totalElementos,
-                         long long tiempoOrdenamientoMs,
-                         long long tiempoTotalMs,
-                         long long hits,
-                         long long faults,
-                         bool ordenado,
-                         bool archivoLegibleGenerado) {
-    bool escribirEncabezado = false;
-
-    if (!filesystem::exists(nombreCSV) || filesystem::is_empty(nombreCSV)) {
-        escribirEncabezado = true;
-    }
-
-    ofstream archivoCSV(nombreCSV, ios::app);
-    if (!archivoCSV.is_open()) {
-        cerr << "Error al abrir el archivo CSV" << endl;
-        return false;
-    }
-
-    if (escribirEncabezado) {
-        archivoCSV << "algoritmo,input,output,pageSize,pageCount,totalElementos,tiempo_ordenamiento_ms,tiempo_total_ms,hits,faults,ordenado,archivo_legible_generado\n";
-    }
-
-    archivoCSV << algoritmo << ","
-               << input << ","
-               << output << ","
-               << pageSize << ","
-               << pageCount << ","
-               << totalElementos << ","
-               << tiempoOrdenamientoMs << ","
-               << tiempoTotalMs << ","
-               << hits << ","
-               << faults << ","
-               << (ordenado ? "true" : "false") << ","
-               << (archivoLegibleGenerado ? "true" : "false") << "\n";
-
-    archivoCSV.close();
-    return true;
-}
-
-bool copiarArchivoBinario(const string& origen, const string& destino) {
-    ifstream archivoEntrada(origen, ios::binary);
+// copia el archivo de entrada al de salida para trabajar sobre la copia
+bool copiarArchivoBinario(const std::string& origen, const std::string& destino) {
+    std::ifstream archivoEntrada(origen, std::ios::binary);
     if (!archivoEntrada.is_open()) {
-        cerr << "Error al abrir el archivo de entrada" << endl;
+        std::cerr << "Error al abrir el archivo de entrada" << std::endl;
         return false;
     }
 
-    ofstream archivoSalida(destino, ios::binary);
+    std::ofstream archivoSalida(destino, std::ios::binary);
     if (!archivoSalida.is_open()) {
-        cerr << "Error al abrir el archivo de salida" << endl;
+        std::cerr << "Error al abrir el archivo de salida" << std::endl;
         return false;
     }
 
@@ -930,34 +888,21 @@ bool copiarArchivoBinario(const string& origen, const string& destino) {
     return true;
 }
 
-void imprimirResumen(const string& nombreAlgoritmo,
+// imprime un pequeno resumen al final de la corrida
+void imprimirResumen(const std::string& nombreAlgoritmo,
                      long long tiempoOrdenamientoMs,
-                     long long tiempoTotalMs,
                      PagedArray& arreglo) {
-    cout << "Tiempo del algoritmo: " << tiempoOrdenamientoMs << " ms" << endl;
-    cout << "Tiempo del programa: " << tiempoTotalMs << " ms" << endl;
-    cout << "Algoritmo: " << nombreAlgoritmo << endl;
-    cout << "Total: " << arreglo.getTotalElementos() << endl;
-
-    if (arreglo.getTotalElementos() > 0) {
-        cout << "Primer elemento: " << (int)arreglo[0] << endl;
-    }
-    if (arreglo.getTotalElementos() > 1) {
-        cout << "Segundo elemento: " << (int)arreglo[1] << endl;
-    }
-    if (arreglo.getTotalElementos() > 2) {
-        cout << "Tercer elemento: " << (int)arreglo[2] << endl;
-    }
-
-    cout << "Hits: " << arreglo.getHits() << endl;
-    cout << "Faults: " << arreglo.getFaults() << endl;
+    std::cout << "Tiempo del algoritmo: " << tiempoOrdenamientoMs << " ms" << std::endl;
+    std::cout << "Algoritmo: " << nombreAlgoritmo << std::endl;
+    std::cout << "Hits: " << arreglo.getHits() << std::endl;
+    std::cout << "Faults: " << arreglo.getFaults() << std::endl;
 }
 
 bool convertirEnteroPositivo(const char* texto, int& valor) {
     try {
-        string s = texto;
+        std::string s = texto;
         size_t pos = 0;
-        int numero = stoi(s, &pos);
+        int numero = std::stoi(s, &pos);
 
         if (pos != s.size()) {
             return false;
@@ -974,40 +919,41 @@ bool convertirEnteroPositivo(const char* texto, int& valor) {
     }
 }
 
+// valida los argumentos que se pasan por consola
 bool validarArgumentos(int argc,
                        char* argv[],
-                       string& input,
-                       string& output,
-                       string& algoritmo,
+                       std::string& input,
+                       std::string& output,
+                       std::string& algoritmo,
                        int& pageSize,
                        int& pageCount) {
     if (argc != 11) {
-        cerr << "sorter -input <archivo_entrada> -output <archivo_salida> -alg <algoritmo> -pageSize <page_size> -pageCount <page_count>" << endl;
+        std::cerr << "sorter -input <archivo_entrada> -output <archivo_salida> -alg <algoritmo> -pageSize <page_size> -pageCount <page_count>" << std::endl;
         return false;
     }
 
-    if (string(argv[1]) != "-input") {
-        cerr << "Falta -input" << endl;
+    if (std::string(argv[1]) != "-input") {
+        std::cerr << "Falta -input" << std::endl;
         return false;
     }
 
-    if (string(argv[3]) != "-output") {
-        cerr << "Falta -output" << endl;
+    if (std::string(argv[3]) != "-output") {
+        std::cerr << "Falta -output" << std::endl;
         return false;
     }
 
-    if (string(argv[5]) != "-alg") {
-        cerr << "Falta -alg" << endl;
+    if (std::string(argv[5]) != "-alg") {
+        std::cerr << "Falta -alg" << std::endl;
         return false;
     }
 
-    if (string(argv[7]) != "-pageSize") {
-        cerr << "Falta -pageSize" << endl;
+    if (std::string(argv[7]) != "-pageSize") {
+        std::cerr << "Falta -pageSize" << std::endl;
         return false;
     }
 
-    if (string(argv[9]) != "-pageCount") {
-        cerr << "Falta -pageCount" << endl;
+    if (std::string(argv[9]) != "-pageCount") {
+        std::cerr << "Falta -pageCount" << std::endl;
         return false;
     }
 
@@ -1015,18 +961,24 @@ bool validarArgumentos(int argc,
     output = argv[4];
     algoritmo = argv[6];
 
-    if (!filesystem::exists(input)) {
-        cerr << "el archivo de input no existe" << endl;
+    if (!std::filesystem::exists(input)) {
+        std::cerr << "el archivo de input no existe" << std::endl;
+        return false;
+    }
+
+    // evita que se intente ordenar sobre el mismo archivo original
+    if (input == output) {
+        std::cerr << "input y output no pueden ser el mismo archivo" << std::endl;
         return false;
     }
 
     if (!convertirEnteroPositivo(argv[8], pageSize)) {
-        cerr << "pageSize debe ser un numero entero positivo " << endl;
+        std::cerr << "pageSize debe ser un numero entero positivo " << std::endl;
         return false;
     }
 
     if (!convertirEnteroPositivo(argv[10], pageCount)) {
-        cerr << "pageCount debe ser un numero entero positivo" << endl;
+        std::cerr << "pageCount debe ser un numero entero positivo" << std::endl;
         return false;
     }
 
@@ -1036,7 +988,7 @@ bool validarArgumentos(int argc,
         algoritmo != "merge" &&
         algoritmo != "counting" &&
         algoritmo != "heap") {
-        cerr << "algoritmo no reconocido" << endl;
+        std::cerr << "algoritmo no reconocido" << std::endl;
         return false;
     }
 
@@ -1045,14 +997,10 @@ bool validarArgumentos(int argc,
 
 int main(int argc, char* argv[]) {
     long long tiempoOrdenamientoMs = 0;
-    long long tiempoTotalMs = 0;
-    int totalElementos = 0;
-    long long hitsFinales = 0;
-    long long faultsFinales = 0;
 
-    string input;
-    string output;
-    string algoritmo;
+    std::string input;
+    std::string output;
+    std::string algoritmo;
     int pageSize = 0;
     int pageCount = 0;
 
@@ -1060,9 +1008,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    string algoritmoUsado = "";
+    std::string algoritmoUsado = "";
 
-    auto inicioTotal = high_resolution_clock::now();
+    auto inicioTotal = std::chrono::high_resolution_clock::now();
 
     if (!copiarArchivoBinario(input, output)) {
         return 1;
@@ -1072,17 +1020,17 @@ int main(int argc, char* argv[]) {
         PagedArray arreglo(output, pageSize, pageCount);
         int n = arreglo.size();
 
-        auto inicioOrdenamiento = high_resolution_clock::now();
+        auto inicioOrdenamiento = std::chrono::high_resolution_clock::now();
 
         if (algoritmo == "intro") {
             algoritmoUsado = "introsort";
             introsort(arreglo, n);
         } else if (algoritmo == "radix") {
             algoritmoUsado = "radixsort";
-            string archivoTemporal = output + "radix.tmp.bin";
+            std::string archivoTemporal = output + "radix.tmp.bin";
             radixsort(arreglo, n, pageSize, pageCount, archivoTemporal);
-            remove(archivoTemporal.c_str());
-        }else if (algoritmo == "quick") {
+            std::filesystem::remove(archivoTemporal);
+        } else if (algoritmo == "quick") {
             algoritmoUsado = "quicksort";
             quicksort(arreglo, 0, n - 1);
         } else if (algoritmo == "merge") {
@@ -1096,52 +1044,28 @@ int main(int argc, char* argv[]) {
             heapsort(arreglo, n);
         }
 
-        auto finOrdenamiento = high_resolution_clock::now();
-        tiempoOrdenamientoMs = duration_cast<milliseconds>(finOrdenamiento - inicioOrdenamiento).count();
+        auto finOrdenamiento = std::chrono::high_resolution_clock::now();
+        tiempoOrdenamientoMs = std::chrono::duration_cast<std::chrono::milliseconds>(finOrdenamiento - inicioOrdenamiento).count();
+        auto finTotal = std::chrono::high_resolution_clock::now();
 
-        totalElementos = arreglo.getTotalElementos();
-        hitsFinales = arreglo.getHits();
-        faultsFinales = arreglo.getFaults();
-
-        auto finTotal = high_resolution_clock::now();
-        tiempoTotalMs = duration_cast<milliseconds>(finTotal - inicioTotal).count();
-
-        imprimirResumen(algoritmoUsado, tiempoOrdenamientoMs, tiempoTotalMs, arreglo);
-    } catch (const exception& e) {
-        cerr << "Error durante la ejecucion: " << e.what() << endl;
+        imprimirResumen(algoritmoUsado, tiempoOrdenamientoMs, arreglo);
+    } catch (const std::exception& e) {
+        std::cerr << "Error durante la ejecucion: " << e.what() << std::endl;
         return 1;
     }
 
+    /*
     bool ordenado = verificarOrden(output);
     if (ordenado) {
-        cout << "Ordenado" << endl;
+        std::cout << "Ordenado" << std::endl;
     } else {
-        cout << "Desordenado" << endl;
+        std::cout << "Desordenado" << std::endl;
     }
-
-    string outputLegible = construirNombreArchivoLegible(output);
+*/
+    std::string outputLegible = construirNombreArchivoLegible(output);
     bool archivoLegibleGenerado = generarArchivoLegible(output, outputLegible);
     if (!archivoLegibleGenerado) {
-        cerr << "No se pudo generar el archivo legible." << endl;
-        return 1;
-    }
-
-    bool csvGuardado = guardarResultadoCSV("resultadossorter.csv",
-                                           algoritmoUsado,
-                                           input,
-                                           output,
-                                           pageSize,
-                                           pageCount,
-                                           totalElementos,
-                                           tiempoOrdenamientoMs,
-                                           tiempoTotalMs,
-                                           hitsFinales,
-                                           faultsFinales,
-                                           ordenado,
-                                           archivoLegibleGenerado);
-
-    if (!csvGuardado) {
-        cerr << "No se pudo guardar el CSV." << endl;
+        std::cerr << "No se pudo generar el archivo legible." << std::endl;
         return 1;
     }
 

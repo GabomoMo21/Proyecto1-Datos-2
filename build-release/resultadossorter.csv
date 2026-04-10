@@ -47,3 +47,8 @@ radixsort,/home/gabo/Documents/Proyecto1-Datos-2/final_256_smallrange.bin,/home/
 radixsort,/home/gabo/Documents/Proyecto1-Datos-2/final_512_smallrange.bin,/home/gabo/Documents/Proyecto1-Datos-2/counting_pc64.bin,4096,32,134217728,20962,21652,1610119158,493578,true,true
 heapsort,/home/gabo/Documents/Proyecto1-Datos-2/final_256.bin,/home/gabo/Documents/Proyecto1-Datos-2/heap_ps2048.bin,2048,32,67108864,1800280,1800536,7627813814,743030567,true,true
 heapsort,/home/gabo/Documents/Proyecto1-Datos-2/final_256.bin,/home/gabo/Documents/Proyecto1-Datos-2/heap_ps4096.bin,4096,32,67108864,2547584,2547842,7703167182,667677199,true,true
+mergesort,/home/gabo/Documents/Proyecto1-Datos-2/final_512_fullrange.bin,/home/gabo/Documents/Proyecto1-Datos-2/mergetest.bin,4096,64,134217728,30869,31594,7247134720,622592,true,true
+radixsort,/home/gabo/Documents/Proyecto1-Datos-2/final_512_fullrange.bin,/home/gabo/Documents/Proyecto1-Datos-2/mergetest.bin,4096,64,134217728,14594,15179,1610219427,393309,true,true
+quicksort,/home/gabo/Documents/Proyecto1-Datos-2/final_512_fullrange.bin,/home/gabo/Documents/Proyecto1-Datos-2/mergetest.bin,4096,64,134217728,38076,38812,9431125710,649045,true,true
+introsort,/home/gabo/Documents/Proyecto1-Datos-2/final_512_fullrange.bin,/home/gabo/Documents/Proyecto1-Datos-2/mergetest.bin,4096,64,134217728,35406,36129,10030065442,649417,true,true
+countingsort,/home/gabo/Documents/Proyecto1-Datos-2/final_512_smallrange.bin,/home/gabo/Documents/Proyecto1-Datos-2/mergetest.bin,4096,64,134217728,1787,2503,402554881,98304,true,true

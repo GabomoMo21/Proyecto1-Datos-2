@@ -129,6 +129,43 @@ sorter/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/sorter.dir/build.make CMakeFiles/sorter.dir/build
 .PHONY : sorter/fast
 
+#=============================================================================
+# Target rules for targets named generator
+
+# Build rule for target.
+generator: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 generator
+.PHONY : generator
+
+# fast build rule for target.
+generator/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generator.dir/build.make CMakeFiles/generator.dir/build
+.PHONY : generator/fast
+
+generator/main.o: generator/main.cpp.o
+.PHONY : generator/main.o
+
+# target to build an object file
+generator/main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generator.dir/build.make CMakeFiles/generator.dir/generator/main.cpp.o
+.PHONY : generator/main.cpp.o
+
+generator/main.i: generator/main.cpp.i
+.PHONY : generator/main.i
+
+# target to preprocess a source file
+generator/main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generator.dir/build.make CMakeFiles/generator.dir/generator/main.cpp.i
+.PHONY : generator/main.cpp.i
+
+generator/main.s: generator/main.cpp.s
+.PHONY : generator/main.s
+
+# target to generate assembly for a file
+generator/main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/generator.dir/build.make CMakeFiles/generator.dir/generator/main.cpp.s
+.PHONY : generator/main.cpp.s
+
 sorter/main.o: sorter/main.cpp.o
 .PHONY : sorter/main.o
 
@@ -161,7 +198,11 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
+	@echo "... generator"
 	@echo "... sorter"
+	@echo "... generator/main.o"
+	@echo "... generator/main.i"
+	@echo "... generator/main.s"
 	@echo "... sorter/main.o"
 	@echo "... sorter/main.i"
 	@echo "... sorter/main.s"

@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(sorter
-    sorter/main.cpp
+    sorter/main.cpp)
+add_executable(generator
+    generator/main.cpp
 )
 
