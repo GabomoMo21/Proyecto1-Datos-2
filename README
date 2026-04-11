@@ -1,8 +1,12 @@
 Proyecto 1 - Arreglos paginados
 
-Este proyecto implementa algoritmos de ordenamiento sobre archivos binarios utilizando una estructura de paginación (PagedArray)
+Este proyecto implementa algoritmos de ordenamiento sobre archivos binarios de gran tamaño utilizando una estructura de paginación (PagedArray).
 
-Se analizan aspectos como tiempo de ejecución, page hits y page faults.
+El objetivo es simular un arreglo que no cabe completamente en memoria RAM y analizar cómo el acceso paginado afecta el rendimiento de distintos algoritmos, midiendo métricas como:
+
+- tiempo de ejecución  
+- page hits  
+- page faults  
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -46,21 +50,23 @@ Desde la carpeta build-release:
 
 Tamaños disponibles (OBLIGATORIO en mayúsculas):
 
-SMALL  
-MEDIUM  
-LARGE  
+SMALL  → 256 MB  
+MEDIUM → 512 MB  
+LARGE  → 1 GB  
 
-Si se escriben en minúscula no funciona
+Si se escriben en minúscula no funciona.
 
-Por defecto, los datos se generan en todo el rango de int
+Generación de datos:
 
-Para usar rango acotado (necesario para Counting Sort), modificar en el código del generator:
+Por defecto, los datos se generan en todo el rango de int (FULL RANGE).
+
+Para usar rango acotado (necesario para Counting Sort), se debe modificar en el código del generator:
 
 const bool USAR_RANGO_ACOTADO = true;
 
 Esto genera valores entre 1000 y 9999.
 
-Luego recompilar.
+Luego recompilar el proyecto.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -75,12 +81,10 @@ Parámetros:
 -input      archivo de entrada  
 -output     archivo de salida (debe ser diferente al input)  
 -alg        algoritmo  
--pageSize   tamaño de página  
+-pageSize   tamaño de página (en cantidad de enteros, no en bytes)  
 -pageCount  cantidad de páginas en memoria  
 
-Algoritmos disponibles
-
-Se deben escribir exactamente así:
+Algoritmos disponibles (escribir exactamente así):
 
 quick     → QuickSort  
 merge     → MergeSort  
@@ -99,8 +103,17 @@ Ejemplo de uso
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+Comportamiento del sorter
+
+- El archivo de entrada no se modifica  
+- El sorter trabaja sobre una copia en el archivo de salida  
+- Al finalizar, se genera automáticamente un archivo .txt con los datos ordenados separados por comas  
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 Importante
-- Todo acceso se hace mediante páginas  
+
+- Todo acceso a los datos se realiza mediante páginas  
 - El rendimiento depende de pageSize, pageCount y el algoritmo  
 
 Counting Sort:
@@ -110,6 +123,6 @@ Counting Sort:
 Consideraciones:
 
 - input y output no pueden ser el mismo archivo  
-- Si se usa counting, se recomienda usar generator con rango acotado  
-- Algoritmos O(n^2) no se incluyen porque no son viables para datos grandes  
-- No es recomendable utilizar radix con pagecounts pequeñas porque aumenta mucho su duración
+- Se recomienda usar generator con rango acotado para pruebas de Counting Sort  
+- Algoritmos O(n^2) no se incluyen por su baja viabilidad en archivos grandes  
+- Radix Sort puede degradarse significativamente con pageCount bajos  
