@@ -12,7 +12,7 @@ using namespace std::chrono;
 // cambiar para el rango acotado
 const bool USAR_RANGO_ACOTADO = false;
 
-
+//verificar la entrada de argumentos
 bool validarArgumentos(int argc,
                        char* argv[],
                        string& opcion,
@@ -42,7 +42,7 @@ bool validarArgumentos(int argc,
 
     return true;
 }
-
+//calcula la cantidad de enteros
 long long obtenerCantidadEnteros(const string& opcion) {
     if (opcion == "SMALL") {
         return (256LL * 1024 * 1024) / 4;
@@ -62,20 +62,23 @@ int main(int argc, char* argv[]) {
     string opcion;
     string archivo;
 
+    //validacion de argumentos
     if (!validarArgumentos(argc, argv, opcion, archivo)) {
         return 1;
     }
 
-    auto inicio = high_resolution_clock::now();
+    auto inicio = high_resolution_clock::now(); //inicia a correr tiempo
 
+    //abre el archivo de salida
     ofstream archivoSalida(archivo, ios::out | ios::binary | ios::trunc);
     if (!archivoSalida.is_open()) {
         cerr << "Error al abrir el archivo binario." << endl;
         return 1;
     }
-
+    //calcula enteros
     long long cantidadEnteros = obtenerCantidadEnteros(opcion);
 
+    //imprime el tamano elegido
     if (opcion == "SMALL") {
         cout << "pequeno" << endl;
     }
@@ -86,30 +89,30 @@ int main(int argc, char* argv[]) {
         cout << "grande" << endl;
     }
 
+    //generador aleatorio
     random_device rd;
     mt19937 generador(rd());
 
-    // rango acotado que usabas antes
+    // rango acotado
     uniform_int_distribution<int> distAcotada(1000, 9999);
 
-    // rango completo por defecto
+    // rango completo
     uniform_int_distribution<int> distCompleta(numeric_limits<int>::min(),
                                                numeric_limits<int>::max());
 
-    string modoUsado = "FULL_RANGE";
 
+    //escribe los numeros en el archivo
     for (long long i = 0; i < cantidadEnteros; i++) {
         int x;
 
         if (USAR_RANGO_ACOTADO) {
             x = distAcotada(generador);
-            modoUsado = "SMALL_RANGE";
+
         } else {
             x = distCompleta(generador);
-            modoUsado = "FULL_RANGE";
         }
 
-        archivoSalida.write(reinterpret_cast<char*>(&x), sizeof(x));
+        archivoSalida.write(reinterpret_cast<char*>(&x), sizeof(x)); //escribir los bytes del entero
 
         if (!archivoSalida) {
             cerr << "Error al escribir en el archivo binario." << endl;
@@ -118,12 +121,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    archivoSalida.close();
+    archivoSalida.close(); ///cerrar archivo
 
+    //calculo de tiempo
     auto fin = high_resolution_clock::now();
     auto duracion = duration_cast<microseconds>(fin - inicio);
 
-    cout << duracion.count()<< "ms" << endl;
+    cout << duracion.count()/1000<< "ms" << endl; //impresion del tiempo durado
 
     return 0;
 }

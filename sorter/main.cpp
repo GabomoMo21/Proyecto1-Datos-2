@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <cmath>
 #include <stdexcept>
-#include <cstdio>
 
 class PagedArray {
 public:
@@ -25,12 +24,12 @@ public:
 
         Referencia& operator=(const Referencia& otra) {
             int valor = (int)otra;
-            arreglo.set(indice, valor);
+            arreglo.set(indice, valor);//escribir el indicie
             return *this;
         }
 
         operator int() const {
-            return arreglo.get(indice);
+            return arreglo.get(indice); //leer el indice
         }
     };
 
@@ -61,7 +60,7 @@ private:
     long long faults;
 
 public:
-    // constructor, abre el archivo y prepara toda la memoria del paged array
+    // constructor
     PagedArray(const std::string& filename, int pageSize, int cantidadPaginas)
         : intsPerPage(pageSize),
           pageCount(cantidadPaginas),
@@ -80,6 +79,7 @@ public:
           hits(0),
           faults(0) {
 
+        //verificaciones de pagesize y pagecount
         if (intsPerPage <= 0) {
             throw std::invalid_argument("Pagesize tiene que ser mayor a 0");
         }
@@ -93,9 +93,10 @@ public:
             throw std::runtime_error("error al abrir el archivo " + filename);
         }
 
-        fileBuffer = new char[BUFFER_SIZE];
+        fileBuffer = new char[BUFFER_SIZE]; //buffer para el acceso al archivo
         archivo.rdbuf()->pubsetbuf(fileBuffer, BUFFER_SIZE);
 
+        //calcular cantidad de bytes
         archivo.seekg(0, std::ios::end);
         std::streampos tamanoArchivo = archivo.tellg();
 
@@ -103,10 +104,10 @@ public:
             throw std::runtime_error("error al obtener el tamano del archivo");
         }
 
-        totalElementos = (int)(tamanoArchivo / (std::streampos)sizeof(int));
+        totalElementos = (int)(tamanoArchivo / (std::streampos)sizeof(int));//cantidad de enteros
         archivo.seekg(0, std::ios::beg);
 
-        // obtiene cuantas paginas logicas tiene el archivo
+        // cuantas paginas logicas tiene el archivo
         totalPages = (totalElementos + intsPerPage - 1) / intsPerPage;
 
         paginas = new int*[pageCount];
@@ -185,10 +186,10 @@ public:
         }
     }
 
-    Referencia operator[](int indice) {
+    Referencia operator[](int indice) { //devuelve la referencia
         return Referencia(*this, indice);
     }
-
+    //stats de la paginacion
     long long getHits() const {
         return hits;
     }
@@ -205,7 +206,7 @@ public:
         return totalElementos;
     }
 
-    // intercambia dos posiciones del arreglo paginado
+    // intercambia dos posiciones del arreglo
     void swapIndices(int a, int b) {
         validarIndice(a);
         validarIndice(b);
@@ -253,13 +254,13 @@ public:
     }
 
 private:
-    void validarIndice(int indice) const {
+    void validarIndice(int indice) const { //revisa si el indice esta en el rango
         if (indice < 0 || indice >= totalElementos) {
             throw std::out_of_range("Indice fuera de rango: " + std::to_string(indice));
         }
     }
-
-    int buscarSlotLibre() const {
+    //logica de paginacion
+    int buscarSlotLibre() const { //revisa si hay campo en memoria
         for (int i = 0; i < pageCount; i++) {
             if (pageNumbers[i] == -1) {
                 return i;
@@ -268,7 +269,7 @@ private:
         return -1;
     }
 
-    // calcula cuantos elementos reales tiene esa pagina
+    // calcula cuantos elementos tiene esa pagina
     int elementosValidosEnPagina(int pageNumber) const {
         int inicio = pageNumber * intsPerPage;
 
@@ -358,7 +359,7 @@ private:
         ultimoSlot = slot;
     }
 
-    // elige victima usando clock
+    // elige a quien reemplazar (victima) usando clock
     int elegirVictimaClock() {
         while (true) {
             if (!referenceBits[punteroClock]) {
@@ -391,8 +392,9 @@ private:
             return slotExistente;
         }
 
-        faults++;
+        faults++; //si no estaba en slot suma fault
 
+        //buscar un campo libre
         int slotLibre = buscarSlotLibre();
         if (slotLibre != -1) {
             cargarPagina(pageNumber, slotLibre);
@@ -411,7 +413,7 @@ private:
         return slotReemplazo;
     }
 
-    // hace flush final de todas las paginas sucias
+    // hace flush de todas las paginas sucias
     void flushTodasLasPaginas() {
         if (paginas == nullptr || pageNumbers == nullptr || dirtyFlags == nullptr) {
             return;
@@ -428,6 +430,9 @@ private:
     }
 };
 
+//funciones auxiliares
+
+//archivo temporal para radixsort
 bool crearArchivoTemporalConTamano(const std::string& nombre, int totalElementos) {
     std::ofstream archivo(nombre, std::ios::binary | std::ios::trunc);
     if (!archivo.is_open()) {
@@ -459,6 +464,8 @@ void intercambiar(PagedArray& arreglo, int a, int b) {
     arreglo.swapIndices(a, b);
 }
 
+//algoritmos de ordenamiento
+
 // quicksort
 int partition(PagedArray& arreglo, int low, int high) {
     int pivot = arreglo[high];
@@ -484,7 +491,7 @@ void quicksort(PagedArray& arreglo, int low, int high) {
     }
 }
 
-// merge de mergesort, usa arreglos auxiliares pequeños para unir dos mitades
+// merge de mergesort
 void merge(PagedArray& arreglo, int izq, int mid, int der) {
     int n1 = mid - izq + 1;
     int n2 = der - mid;
@@ -542,7 +549,8 @@ void mergesort(PagedArray& arreglo, int izq, int der) {
     merge(arreglo, izq, mid, der);
 }
 
-// counting sort, funciona bien cuando el rango de valores es pequeno
+// counting sort
+//solo funciona si el rango es valido(smallrange)
 void countingsort(PagedArray& arr, int n) {
     if (n <= 1) {
         return;
@@ -563,7 +571,7 @@ void countingsort(PagedArray& arr, int n) {
         }
     }
 
-    // valida el rango para evitar reservar memoria imposible o invalida
+    // valida el rango
     long long rangoReal = (long long)maxval - (long long)minval + 1;
 
     if (rangoReal <= 0 || rangoReal > 10000000LL) {
@@ -640,7 +648,9 @@ void heapsort(PagedArray& arr, int n) {
     }
 }
 
-// insertion sort para tramos pequenos dentro de introsort
+//introsort
+
+// insertion sort para introsort
 void insertionSortRange(PagedArray& arreglo, int low, int high) {
     for (int i = low + 1; i <= high; i++) {
         int clave = arreglo[i];
@@ -654,7 +664,7 @@ void insertionSortRange(PagedArray& arreglo, int low, int high) {
         arreglo[j + 1] = clave;
     }
 }
-
+//heapsort para el introsort
 void heapifyRange(PagedArray& arr, int low, int heapSize, int root) {
     int largest = root;
     int left = 2 * root + 1;
@@ -687,6 +697,7 @@ void heapsortRange(PagedArray& arr, int low, int high) {
     }
 }
 
+//particion de introsort
 int partitionIntro(PagedArray& arreglo, int low, int high) {
     int pivot = arreglo[high];
     int i = low - 1;
@@ -702,11 +713,12 @@ int partitionIntro(PagedArray& arreglo, int low, int high) {
     return i + 1;
 }
 
-// calcula la profundidad maxima para cambiar de quick a heap si hace falta
+// calcula la profundidad maxima para cambiar de quick a heap
 int profundidadMaxima(int n) {
     return 2 * (int)log2(n);
 }
 
+//verifica el rango para elegir el algoritmo a usar
 void introsortUtil(PagedArray& arreglo, int low, int high, int depthLimit) {
     int size = high - low + 1;
 
@@ -726,6 +738,7 @@ void introsortUtil(PagedArray& arreglo, int low, int high, int depthLimit) {
     introsortUtil(arreglo, pivot + 1, high, depthLimit - 1);
 }
 
+//introsort
 void introsort(PagedArray& arreglo, int n) {
     if (n <= 1) {
         return;
@@ -748,7 +761,7 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const std::s
     PagedArray* src = &arr;
     PagedArray* dst = &temp;
 
-    const int BASE = 32;
+    const int BASE = 32; //la base a utilizar por el radix sort
     const int BITS_POR_PASADA = 5;
     const int MASCARA = BASE - 1;
 
@@ -761,20 +774,20 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const std::s
             posiciones[i] = 0;
         }
 
-        // cuenta cuantos elementos van en cada digito
+        // cuenta elementos por digito
         for (int i = 0; i < n; i++) {
             int valor = (*src)[i];
-            unsigned int clave = ((unsigned int)valor) ^ 0x80000000u;
+            unsigned int clave = ((unsigned int)valor) ^ 0x80000000u; //transforma el orden de enteros
             int digito = (clave >> shift) & MASCARA;
             conteo[digito]++;
         }
 
-        // calcula posiciones iniciales acumuladas
+        // calcula posiciones iniciales
         for (int i = 1; i < BASE; i++) {
             posiciones[i] = posiciones[i - 1] + conteo[i - 1];
         }
 
-        // distribuye los elementos en el arreglo destino
+        // distribuye los elementos
         for (int i = 0; i < n; i++) {
             int valor = (*src)[i];
             unsigned int clave = ((unsigned int)valor) ^ 0x80000000u;
@@ -797,7 +810,7 @@ void radixsort(PagedArray& arr, int n, int pageSize, int pageCount, const std::s
 }
 
 // revisa si el archivo final quedo ordenado
-/*
+
 bool verificarOrden(const std::string& filename) {
     std::ifstream archivo(filename, std::ios::binary);
 
@@ -825,7 +838,10 @@ bool verificarOrden(const std::string& filename) {
     archivo.close();
     return true;
 }
-*/
+
+
+//construye el archivo legible
+//elimina la extension y la reemplaza por .txt
 std::string construirNombreArchivoLegible(const std::string& output) {
     size_t punto = output.find_last_of('.');
 
@@ -888,7 +904,7 @@ bool copiarArchivoBinario(const std::string& origen, const std::string& destino)
     return true;
 }
 
-// imprime un pequeno resumen al final de la corrida
+// imprimir resumen de datos
 void imprimirResumen(const std::string& nombreAlgoritmo,
                      long long tiempoOrdenamientoMs,
                      PagedArray& arreglo) {
@@ -933,27 +949,27 @@ bool validarArgumentos(int argc,
     }
 
     if (std::string(argv[1]) != "-input") {
-        std::cerr << "Falta -input" << std::endl;
+        std::cerr << "falta -input" << std::endl;
         return false;
     }
 
     if (std::string(argv[3]) != "-output") {
-        std::cerr << "Falta -output" << std::endl;
+        std::cerr << "falta -output" << std::endl;
         return false;
     }
 
     if (std::string(argv[5]) != "-alg") {
-        std::cerr << "Falta -alg" << std::endl;
+        std::cerr << "falta -alg" << std::endl;
         return false;
     }
 
     if (std::string(argv[7]) != "-pageSize") {
-        std::cerr << "Falta -pageSize" << std::endl;
+        std::cerr << "falta -pageSize" << std::endl;
         return false;
     }
 
     if (std::string(argv[9]) != "-pageCount") {
-        std::cerr << "Falta -pageCount" << std::endl;
+        std::cerr << "falta -pageCount" << std::endl;
         return false;
     }
 
@@ -973,7 +989,7 @@ bool validarArgumentos(int argc,
     }
 
     if (!convertirEnteroPositivo(argv[8], pageSize)) {
-        std::cerr << "pageSize debe ser un numero entero positivo " << std::endl;
+        std::cerr << "pagesize debe ser un numero entero positivo " << std::endl;
         return false;
     }
 
@@ -1004,6 +1020,7 @@ int main(int argc, char* argv[]) {
     int pageSize = 0;
     int pageCount = 0;
 
+    //valida argumentos
     if (!validarArgumentos(argc, argv, input, output, algoritmo, pageSize, pageCount)) {
         return 1;
     }
@@ -1012,16 +1029,18 @@ int main(int argc, char* argv[]) {
 
     auto inicioTotal = std::chrono::high_resolution_clock::now();
 
+    //copiar archivo
     if (!copiarArchivoBinario(input, output)) {
         return 1;
     }
 
     try {
-        PagedArray arreglo(output, pageSize, pageCount);
+        PagedArray arreglo(output, pageSize, pageCount); //crear el pagedarray
         int n = arreglo.size();
 
-        auto inicioOrdenamiento = std::chrono::high_resolution_clock::now();
+        auto inicioOrdenamiento = std::chrono::high_resolution_clock::now(); //inicia a correr tiempo
 
+        //verificacion de algoritmo y lo corre
         if (algoritmo == "intro") {
             algoritmoUsado = "introsort";
             introsort(arreglo, n);
@@ -1044,6 +1063,7 @@ int main(int argc, char* argv[]) {
             heapsort(arreglo, n);
         }
 
+        //calcular tiempo final
         auto finOrdenamiento = std::chrono::high_resolution_clock::now();
         tiempoOrdenamientoMs = std::chrono::duration_cast<std::chrono::milliseconds>(finOrdenamiento - inicioOrdenamiento).count();
         auto finTotal = std::chrono::high_resolution_clock::now();
@@ -1054,14 +1074,14 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    /*
+
     bool ordenado = verificarOrden(output);
     if (ordenado) {
         std::cout << "Ordenado" << std::endl;
     } else {
         std::cout << "Desordenado" << std::endl;
     }
-*/
+
     std::string outputLegible = construirNombreArchivoLegible(output);
     bool archivoLegibleGenerado = generarArchivoLegible(output, outputLegible);
     if (!archivoLegibleGenerado) {

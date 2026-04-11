@@ -18,3 +18,11 @@ generator/cmake-build-debug/
 .idea/
 cmake-build-debug/
 generator/cmake-build-debug/
+build-release/
+*.bin
+build-release/
+*.bin
+*.txt
+build-release/
+*.bin
+*.txt
