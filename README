@@ -1,83 +1,115 @@
 Proyecto 1 - Arreglos paginados
 
-
-
-Este proyecto implementa algoritmos de ordenamiento sobre archivos binarios utilizando una estructura de paginación (PagedArray), simulando acceso a memoria limitada.
+Este proyecto implementa algoritmos de ordenamiento sobre archivos binarios utilizando una estructura de paginación (PagedArray)
 
 Se analizan aspectos como tiempo de ejecución, page hits y page faults.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-## Compilación
+Requisitos
+
+- Tener CMake instalado  
+  https://cmake.org/download/
+
+- Tener un compilador C++ (g++, clang o similar)
+
+Para verificar CMake:
+cmake --version
+
+Si no funciona, debes instalarlo antes de continuar.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Compilación
 
 Desde terminal:
 
-cmd
 mkdir build-release
 cd build-release
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-## Ejecutables
+Ejecutables
 
-generator → genera archivos binarios
-sorter → ordena archivos binarios
+generator → genera archivos binarios  
+sorter → ordena archivos binarios  
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-## Uso del generator
+Uso del generator
 
-cmd
-generator -size SMALL -output datos.bin
+Desde la carpeta build-release:
 
-Opciones de tamaño:
-SMALL | MEDIUM | LARGE
+./generator -size SMALL -output datos.bin
 
-Por defecto, los datos se generan en todo el rango de enteros (FULL RANGE).
+Tamaños disponibles (OBLIGATORIO en mayúsculas):
 
-Para generar datos en un rango acotado (por ejemplo de 1000 a 9999), se debe modificar el código del generator:
+SMALL  
+MEDIUM  
+LARGE  
 
-Buscar la línea:
+Si se escriben en minúscula no funciona
 
-const bool USAR_RANGO_ACOTADO = false;
+Por defecto, los datos se generan en todo el rango de int
 
-y cambiarla a:
+Para usar rango acotado (necesario para Counting Sort), modificar en el código del generator:
 
 const bool USAR_RANGO_ACOTADO = true;
 
-Luego recompilar el proyecto.
+Esto genera valores entre 1000 y 9999.
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Luego recompilar.
 
-## Sorter
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-cmd
-sorter -input datos.bin -output ordenado.bin -alg quick -pageSize 4096 -pageCount 8
+Uso del sorter
+
+Desde la carpeta build-release:
+
+./sorter -input datos.bin -output ordenado.bin -alg quick -pageSize 4096 -pageCount 8
 
 Parámetros:
 
--input      archivo de entrada
--output     archivo de salida
--alg        algoritmo (quick, merge, heap, intro, counting, radix)
--pageSize   tamaño de página
--pageCount  cantidad de páginas
+-input      archivo de entrada  
+-output     archivo de salida (debe ser diferente al input)  
+-alg        algoritmo  
+-pageSize   tamaño de página  
+-pageCount  cantidad de páginas en memoria  
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Algoritmos disponibles
 
-## Ejemplo 
+Se deben escribir exactamente así:
 
-cmd
-generator -size SMALL -output datos.bin
+quick     → QuickSort  
+merge     → MergeSort  
+intro     → IntroSort  
+heap      → HeapSort (implementado, también se puede ejecutar)  
+counting  → Counting Sort  
+radix     → Radix Sort  
 
-sorter -input datos.bin -output ordenado.bin -alg quick -pageSize 4096 -pageCount 8
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Ejemplo de uso
 
-## Importante
+./generator -size SMALL -output datos.bin
 
-* El archivo no se carga completamente en memoria
-* El rendimiento depende del acceso por páginas
-* Counting Sort solo es eficiente con rangos pequeños
-* Algoritmos O(n^2) no son viables para datos grandes
+./sorter -input datos.bin -output ordenado.bin -alg quick -pageSize 4096 -pageCount 8
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Importante
+- Todo acceso se hace mediante páginas  
+- El rendimiento depende de pageSize, pageCount y el algoritmo  
+
+Counting Sort:
+- Solo funciona correctamente con rango acotado  
+- No es viable en FULL RANGE  
+
+Consideraciones:
+
+- input y output no pueden ser el mismo archivo  
+- Si se usa counting, se recomienda usar generator con rango acotado  
+- Algoritmos O(n^2) no se incluyen porque no son viables para datos grandes  
+- No es recomendable utilizar radix con pagecounts pequeñas porque aumenta mucho su duración
