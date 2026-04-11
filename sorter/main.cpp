@@ -24,12 +24,12 @@ public:
 
         Referencia& operator=(const Referencia& otra) {
             int valor = (int)otra;
-            arreglo.set(indice, valor);//escribir el indicie
+            arreglo.set(indice, valor);//escribir el valor en esa posicion
             return *this;
         }
 
         operator int() const {
-            return arreglo.get(indice); //leer el indice
+            return arreglo.get(indice); //devuelve el valor en esa posicion
         }
     };
 
@@ -96,7 +96,7 @@ public:
         fileBuffer = new char[BUFFER_SIZE]; //buffer para el acceso al archivo
         archivo.rdbuf()->pubsetbuf(fileBuffer, BUFFER_SIZE);
 
-        //calcular cantidad de bytes
+        //obtiene el tamano del archivo en bytes
         archivo.seekg(0, std::ios::end);
         std::streampos tamanoArchivo = archivo.tellg();
 
@@ -260,7 +260,7 @@ private:
         }
     }
     //logica de paginacion
-    int buscarSlotLibre() const { //revisa si hay campo en memoria
+    int buscarSlotLibre() const { //bsuca espacio para cargar una pagina
         for (int i = 0; i < pageCount; i++) {
             if (pageNumbers[i] == -1) {
                 return i;
@@ -718,7 +718,7 @@ int profundidadMaxima(int n) {
     return 2 * (int)log2(n);
 }
 
-//verifica el rango para elegir el algoritmo a usar
+//verifica el rango y decide si sigue con quicksort, o cambiia a heap o insertion
 void introsortUtil(PagedArray& arreglo, int low, int high, int depthLimit) {
     int size = high - low + 1;
 
@@ -1035,7 +1035,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        PagedArray arreglo(output, pageSize, pageCount); //crear el pagedarray
+        PagedArray arreglo(output, pageSize, pageCount); //crea el pagedarray sobre el archivo de salida
         int n = arreglo.size();
 
         auto inicioOrdenamiento = std::chrono::high_resolution_clock::now(); //inicia a correr tiempo

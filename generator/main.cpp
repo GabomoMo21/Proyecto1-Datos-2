@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     random_device rd;
     mt19937 generador(rd());
 
-    // rango acotado
+    // rango acotado para counting
     uniform_int_distribution<int> distAcotada(1000, 9999);
 
     // rango completo
@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
 
     archivoSalida.close(); ///cerrar archivo
 
-    //calculo de tiempo
+    //calcula el tiempo final
     auto fin = high_resolution_clock::now();
     auto duracion = duration_cast<microseconds>(fin - inicio);
 
